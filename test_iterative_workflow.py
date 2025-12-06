@@ -11,7 +11,11 @@ This demonstrates the complete iterative design workflow:
 
 import sys
 import os
-sys.path.insert(0, 'src')
+from pathlib import Path
+
+# Add src directory to path for imports
+src_path = Path(__file__).parent / 'src'
+sys.path.insert(0, str(src_path))
 
 from server import (
     cad_create_model,

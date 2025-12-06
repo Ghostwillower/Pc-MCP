@@ -501,7 +501,6 @@ def cad_update_parameters(model_id: str, parameters: Dict[str, Any]) -> Dict[str
         
         # Read existing content
         content = scad_path.read_text()
-        lines = content.split('\n')
         
         updated = []
         changes = {}
@@ -511,6 +510,7 @@ def cad_update_parameters(model_id: str, parameters: Dict[str, Any]) -> Dict[str
         for param_name, param_value in parameters.items():
             # Look for parameter assignment pattern: param_name = value;
             # Handles both numeric and boolean values
+            # Note: Pattern is compiled per parameter to support dynamic param_name
             pattern = re.compile(
                 rf'^(\s*)({re.escape(param_name)})\s*=\s*([^;]+);',
                 re.MULTILINE
