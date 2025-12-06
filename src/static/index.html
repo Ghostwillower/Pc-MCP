@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CadSlicerPrinter Control Panel</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛠️ CadSlicerPrinter Control Panel</h1>
+            <p class="subtitle">3D Model Design, Slicing, and Printing</p>
+        </header>
+
+        <main>
+            <!-- CAD Section -->
+            <section class="panel">
+                <h2>📐 CAD Operations</h2>
+                
+                <div class="action-group">
+                    <h3>Create Model</h3>
+                    <textarea id="model-description" placeholder="Describe your 3D model (e.g., 'A parametric phone stand with adjustable angle')"></textarea>
+                    <button onclick="createModel()">Create Model</button>
+                </div>
+
+                <div class="action-group">
+                    <h3>Modify Model</h3>
+                    <input type="text" id="modify-model-id" placeholder="Model ID">
+                    <textarea id="modify-instruction" placeholder="Modification instruction (e.g., 'Increase height to 50mm')"></textarea>
+                    <button onclick="modifyModel()">Modify Model</button>
+                </div>
+
+                <div class="action-group">
+                    <h3>Render Preview</h3>
+                    <input type="text" id="preview-model-id" placeholder="Model ID">
+                    <select id="preview-view">
+                        <option value="iso">Isometric</option>
+                        <option value="top">Top</option>
+                        <option value="bottom">Bottom</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                        <option value="front">Front</option>
+                        <option value="back">Back</option>
+                    </select>
+                    <button onclick="renderPreview()">Render Preview</button>
+                </div>
+
+                <div class="action-group">
+                    <h3>List Previews</h3>
+                    <input type="text" id="list-previews-model-id" placeholder="Model ID">
+                    <button onclick="listPreviews()">List Previews</button>
+                </div>
+            </section>
+
+            <!-- Slicer Section -->
+            <section class="panel">
+                <h2>🔪 Slicer Operations</h2>
+                
+                <div class="action-group">
+                    <h3>Slice Model</h3>
+                    <input type="text" id="slice-model-id" placeholder="Model ID">
+                    <input type="text" id="slice-profile" placeholder="Slicer profile path">
+                    <button onclick="sliceModel()">Slice Model</button>
+                </div>
+            </section>
+
+            <!-- Printer Section -->
+            <section class="panel">
+                <h2>🖨️ Printer Operations</h2>
+                
+                <div class="action-group">
+                    <h3>Printer Status</h3>
+                    <button onclick="getPrinterStatus()">Get Status</button>
+                </div>
+
+                <div class="action-group">
+                    <h3>Upload and Start Print</h3>
+                    <input type="text" id="print-model-id" placeholder="Model ID">
+                    <button onclick="uploadAndPrint()">Upload & Start Print</button>
+                </div>
+
+                <div class="action-group">
+                    <h3>Send G-code Command</h3>
+                    <input type="text" id="gcode-command" placeholder="G-code command (e.g., 'G28')">
+                    <button onclick="sendGcode()">Send Command</button>
+                </div>
+            </section>
+
+            <!-- Workspace Section -->
+            <section class="panel">
+                <h2>📁 Workspace</h2>
+                
+                <div class="action-group">
+                    <h3>List All Models</h3>
+                    <button onclick="listModels()">List Models</button>
+                </div>
+            </section>
+
+            <!-- Output Section -->
+            <section class="panel output-panel">
+                <h2>📋 Output</h2>
+                <div id="output" class="output"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>CadSlicerPrinter MCP Server | <span id="server-status" class="status-disconnected">Disconnected</span></p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

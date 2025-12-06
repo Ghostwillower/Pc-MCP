@@ -1069,7 +1069,151 @@ def parse_arguments():
         default=MCP_TRANSPORT,
         help="MCP transport protocol (default: stdio for OpenAI compatibility)"
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable web control panel (runs on port 8080)"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for web control panel (default: 8080)"
+    )
     return parser.parse_args()
+
+
+# ============================================================================
+# WEB API ENDPOINTS (for frontend control panel)
+# ============================================================================
+
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from starlette.responses import JSONResponse, FileResponse
+from starlette.staticfiles import StaticFiles
+import asyncio
+import threading
+
+
+# Web API endpoints that wrap MCP tools
+async def api_health(request):
+    """Health check endpoint"""
+    return JSONResponse({"status": "ok", "server": "CadSlicerPrinter"})
+
+
+async def api_cad_create(request):
+    """Create a new CAD model"""
+    data = await request.json()
+    result = cad_create_model(description=data.get("description", ""))
+    return JSONResponse(result)
+
+
+async def api_cad_modify(request):
+    """Modify an existing CAD model"""
+    data = await request.json()
+    result = cad_modify_model(
+        model_id=data.get("model_id", ""),
+        instruction=data.get("instruction", "")
+    )
+    return JSONResponse(result)
+
+
+async def api_cad_preview(request):
+    """Render a preview of a CAD model"""
+    data = await request.json()
+    result = cad_render_preview(
+        model_id=data.get("model_id", ""),
+        view=data.get("view", "iso"),
+        width=data.get("width", 800),
+        height=data.get("height", 600)
+    )
+    return JSONResponse(result)
+
+
+async def api_cad_list_previews(request):
+    """List previews for a model"""
+    data = await request.json()
+    result = cad_list_previews(model_id=data.get("model_id", ""))
+    return JSONResponse(result)
+
+
+async def api_slicer_slice(request):
+    """Slice a model"""
+    data = await request.json()
+    result = slicer_slice_model(
+        model_id=data.get("model_id", ""),
+        profile=data.get("profile", ""),
+        extra_args=data.get("extra_args")
+    )
+    return JSONResponse(result)
+
+
+async def api_printer_status(request):
+    """Get printer status"""
+    result = printer_status()
+    return JSONResponse(result)
+
+
+async def api_printer_upload_and_start(request):
+    """Upload and start print"""
+    data = await request.json()
+    result = printer_upload_and_start(model_id=data.get("model_id", ""))
+    return JSONResponse(result)
+
+
+async def api_printer_send_gcode(request):
+    """Send G-code command"""
+    data = await request.json()
+    result = printer_send_gcode_line(gcode=data.get("gcode", ""))
+    return JSONResponse(result)
+
+
+async def api_workspace_models(request):
+    """List all workspace models"""
+    result = workspace_list_models()
+    return JSONResponse(result)
+
+
+async def index(request):
+    """Serve the main web interface"""
+    static_dir = Path(__file__).parent / "static"
+    return FileResponse(static_dir / "index.html")
+
+
+# Create web application with both MCP and web API
+def create_web_app():
+    """Create a Starlette application with both MCP and web API endpoints"""
+    static_dir = Path(__file__).parent / "static"
+    
+    routes = [
+        Route("/", index),
+        Route("/api/health", api_health, methods=["GET"]),
+        Route("/api/cad/create", api_cad_create, methods=["POST"]),
+        Route("/api/cad/modify", api_cad_modify, methods=["POST"]),
+        Route("/api/cad/preview", api_cad_preview, methods=["POST"]),
+        Route("/api/cad/list-previews", api_cad_list_previews, methods=["POST"]),
+        Route("/api/slicer/slice", api_slicer_slice, methods=["POST"]),
+        Route("/api/printer/status", api_printer_status, methods=["GET"]),
+        Route("/api/printer/upload-and-start", api_printer_upload_and_start, methods=["POST"]),
+        Route("/api/printer/send-gcode", api_printer_send_gcode, methods=["POST"]),
+        Route("/api/workspace/models", api_workspace_models, methods=["GET"]),
+        Mount("/static", StaticFiles(directory=str(static_dir)), name="static"),
+    ]
+    
+    return Starlette(routes=routes)
+
+
+def run_web_server(port=8080):
+    """Run the web server with both MCP and web API"""
+    import uvicorn
+    app = create_web_app()
+    
+    logger.info("=" * 80)
+    logger.info(f"Web Control Panel available at: http://localhost:{port}")
+    logger.info(f"MCP endpoints available at: http://localhost:{port}/api/...")
+    logger.info("=" * 80)
+    
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
 
 # ============================================================================
@@ -1080,8 +1224,14 @@ if __name__ == "__main__":
     args = parse_arguments()
     startup_checks()
     
-    # Log the transport being used
-    logger.info(f"Starting MCP server with transport: {args.transport}")
-    
-    # Run the server with the selected transport
-    mcp.run(transport=args.transport)
+    # Check if we should run in web mode (with frontend)
+    # Web mode is enabled when using --web flag or streamable-http transport
+    if args.web or args.transport == "streamable-http":
+        logger.info("Starting server in web mode with control panel")
+        run_web_server(port=args.port)
+    else:
+        # Log the transport being used
+        logger.info(f"Starting MCP server with transport: {args.transport}")
+        
+        # Run the server with the selected transport
+        mcp.run(transport=args.transport)
