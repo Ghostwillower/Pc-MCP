@@ -15,18 +15,42 @@ The workflow simulates:
 
 import os
 import sys
+import asyncio
 sys.path.insert(0, 'src')
 
-from server import (
-    cad_create_model,
-    cad_get_code,
-    cad_update_parameters,
-    cad_render_preview,
-    cad_list_previews,
-    slicer_slice_model,
-    workspace_list_models,
-    printer_status,
-)
+# Import from new modular architecture
+from services import CADService, SlicerService, PrinterService, WorkspaceService
+
+# Create service instances
+_cad_service = CADService()
+_slicer_service = SlicerService()
+_printer_service = PrinterService()
+_workspace_service = WorkspaceService()
+
+# Create compatibility wrapper functions
+def cad_create_model(description: str):
+    return _cad_service.create_model(description)
+
+def cad_get_code(model_id: str):
+    return _cad_service.get_code(model_id)
+
+def cad_update_parameters(model_id: str, parameters: dict):
+    return _cad_service.update_parameters(model_id, parameters)
+
+async def cad_render_preview(model_id: str, view: str = "iso", width: int = 800, height: int = 600):
+    return await _cad_service.render_preview(model_id, view, width, height)
+
+def cad_list_previews(model_id: str):
+    return _cad_service.list_previews(model_id)
+
+async def slicer_slice_model(model_id: str, profile: str, extra_args=None):
+    return await _slicer_service.slice_model(model_id, profile, extra_args)
+
+def workspace_list_models():
+    return _workspace_service.list_models()
+
+async def printer_status():
+    return await _printer_service.get_status()
 
 
 def main():

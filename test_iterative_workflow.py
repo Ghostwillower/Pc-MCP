@@ -17,12 +17,24 @@ from pathlib import Path
 src_path = Path(__file__).parent / 'src'
 sys.path.insert(0, str(src_path))
 
-from server import (
-    cad_create_model,
-    cad_get_code,
-    cad_update_parameters,
-    cad_modify_model,
-)
+# Import from new modular architecture
+from services import CADService
+
+# Create service instance
+_cad_service = CADService()
+
+# Create compatibility wrapper functions
+def cad_create_model(description: str):
+    return _cad_service.create_model(description)
+
+def cad_get_code(model_id: str):
+    return _cad_service.get_code(model_id)
+
+def cad_update_parameters(model_id: str, parameters: dict):
+    return _cad_service.update_parameters(model_id, parameters)
+
+def cad_modify_model(model_id: str, instruction: str):
+    return _cad_service.add_modification_note(model_id, instruction)
 
 
 def test_iterative_workflow():
