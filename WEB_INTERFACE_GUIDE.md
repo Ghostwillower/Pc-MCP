@@ -163,6 +163,33 @@ sudo systemctl enable cadslicerprinter@$USER.service
 sudo systemctl disable cadslicerprinter@$USER.service
 ```
 
+### Enabling Network Access
+
+By default, the service runs on localhost only (127.0.0.1) for security. To enable access from other devices on your network:
+
+1. Edit the service file:
+   ```bash
+   sudo nano /etc/systemd/system/cadslicerprinter@.service
+   ```
+
+2. Change the ExecStart line from:
+   ```
+   ExecStart=/usr/bin/python3 /path/to/server.py --web --port 8080 --host 127.0.0.1
+   ```
+   
+   To:
+   ```
+   ExecStart=/usr/bin/python3 /path/to/server.py --web --port 8080 --host 0.0.0.0
+   ```
+
+3. Reload and restart:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart cadslicerprinter@$USER.service
+   ```
+
+**Security Warning:** Exposing to `0.0.0.0` makes the web interface accessible from your entire network. Ensure your network is secure and consider using a firewall.
+
 ### Manual Service File Installation
 
 If you prefer to install the service file manually:
@@ -273,11 +300,13 @@ For macOS systems, create a LaunchAgent:
 
 ## Security Considerations
 
-- The web interface listens on all network interfaces (0.0.0.0) by default
-- Consider using a reverse proxy (nginx, Apache) with authentication for production use
-- Set firewall rules to restrict access to port 8080 if needed
-- Store OctoPrint API keys securely
-- Run the service as a non-privileged user (default behavior)
+- **Default Binding**: The web interface listens on `127.0.0.1` (localhost only) by default for security
+- **Network Access**: Use `--host 0.0.0.0` to allow access from other devices on your network
+- **Production Use**: Consider using a reverse proxy (nginx, Apache) with authentication
+- **Firewall**: Set firewall rules to restrict access to port 8080 if exposing to network
+- **API Keys**: Store OctoPrint API keys securely (use environment variables)
+- **User Privileges**: Run the service as a non-privileged user (default behavior)
+- **HTTPS**: For internet exposure, use a reverse proxy with HTTPS/TLS encryption
 
 ## Integration with MCP Clients
 

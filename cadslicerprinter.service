@@ -11,7 +11,8 @@ Environment="OPENSCAD_BIN=/usr/bin/openscad"
 Environment="SLICER_BIN=/usr/bin/prusa-slicer"
 Environment="OCTOPRINT_URL=http://localhost:5000"
 Environment="OCTOPRINT_API_KEY="
-ExecStart=/usr/bin/python3 /home/%i/Pc-MCP/src/server.py --web --port 8080 --host 0.0.0.0
+# Default to localhost-only for security. Change --host to 0.0.0.0 for network access.
+ExecStart=/usr/bin/python3 /home/%i/Pc-MCP/src/server.py --web --port 8080 --host 127.0.0.1
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
