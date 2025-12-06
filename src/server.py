@@ -15,6 +15,10 @@ Environment Variables:
 - SLICER_BIN: Path to slicer CLI executable
 - OCTOPRINT_URL: OctoPrint URL (e.g., http://localhost:5000)
 - OCTOPRINT_API_KEY: API key for OctoPrint authentication
+- MCP_TRANSPORT: Transport protocol (stdio, sse, or streamable-http; default: stdio)
+
+Command-line Arguments:
+- --transport: Override MCP_TRANSPORT setting (stdio, sse, or streamable-http)
 """
 
 import os
@@ -25,6 +29,7 @@ import subprocess
 import uuid
 import json
 import time
+import argparse
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -47,6 +52,15 @@ OPENSCAD_BIN = os.getenv("OPENSCAD_BIN", "openscad")
 SLICER_BIN = os.getenv("SLICER_BIN", "")
 OCTOPRINT_URL = os.getenv("OCTOPRINT_URL", "http://localhost:5000")
 OCTOPRINT_API_KEY = os.getenv("OCTOPRINT_API_KEY", "")
+
+# Validate and set MCP transport
+_VALID_TRANSPORTS = ["stdio", "sse", "streamable-http"]
+_transport_env = os.getenv("MCP_TRANSPORT", "stdio")
+if _transport_env not in _VALID_TRANSPORTS:
+    logger.warning(f"Invalid MCP_TRANSPORT '{_transport_env}', using default 'stdio'")
+    MCP_TRANSPORT = "stdio"
+else:
+    MCP_TRANSPORT = _transport_env
 
 # Constants
 MAX_OUTPUT_LENGTH = 10000  # Maximum length for stdout/stderr output
@@ -1038,10 +1052,36 @@ def startup_checks():
     logger.info("=" * 80)
 
 
+def parse_arguments():
+    """
+    Parse command-line arguments for transport selection.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments
+    """
+    parser = argparse.ArgumentParser(
+        description="CadSlicerPrinter MCP Server - 3D model design, slicing, and printing"
+    )
+    parser.add_argument(
+        "--transport",
+        type=str,
+        choices=["stdio", "sse", "streamable-http"],
+        default=MCP_TRANSPORT,
+        help="MCP transport protocol (default: stdio for OpenAI compatibility)"
+    )
+    return parser.parse_args()
+
+
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
 if __name__ == "__main__":
+    args = parse_arguments()
     startup_checks()
-    mcp.run(transport="streamable-http")
+    
+    # Log the transport being used
+    logger.info(f"Starting MCP server with transport: {args.transport}")
+    
+    # Run the server with the selected transport
+    mcp.run(transport=args.transport)
