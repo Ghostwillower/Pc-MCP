@@ -8,7 +8,48 @@ using JSON-RPC messages over stdin/stdout.
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+# Platform-specific imports
+try:
+    import select
+    HAS_SELECT = True
+except ImportError:
+    # Windows doesn't have select for stdin/stdout
+    HAS_SELECT = False
+
+
+def wait_for_server_ready(proc, timeout=5):
+    """
+    Wait for server to be ready by checking if it's still running.
+    
+    Args:
+        proc: subprocess.Popen instance
+        timeout: Maximum seconds to wait
+        
+    Returns:
+        bool: True if server appears ready
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if proc.poll() is not None:
+            # Process exited
+            return False
+        
+        # Check if stderr has startup messages
+        if HAS_SELECT:
+            if select.select([proc.stderr], [], [], 0.1)[0]:
+                stderr_output = proc.stderr.readline()
+                if "Server ready" in stderr_output:
+                    return True
+        else:
+            # On Windows, just wait a bit
+            time.sleep(0.1)
+    
+    # After timeout, assume ready if still running
+    return proc.poll() is None
+
 
 def test_stdio_communication():
     """
@@ -31,9 +72,12 @@ def test_stdio_communication():
             bufsize=1
         )
         
-        # Wait a moment for server to initialize
-        import time
-        time.sleep(2)
+        # Wait for server to initialize
+        if not wait_for_server_ready(proc):
+            print("✗ Server failed to start")
+            stderr_output = proc.stderr.read()
+            print(f"Stderr: {stderr_output}")
+            return False
         
         # Send initialize request (MCP protocol)
         initialize_request = {
@@ -57,8 +101,7 @@ def test_stdio_communication():
         # Try to read response with timeout
         try:
             # Read stderr to check server started
-            import select
-            if select.select([proc.stderr], [], [], 1)[0]:
+            if HAS_SELECT and select.select([proc.stderr], [], [], 1)[0]:
                 stderr_output = proc.stderr.readline()
                 print(f"Server stderr: {stderr_output.strip()}")
             
