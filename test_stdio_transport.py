@@ -37,15 +37,8 @@ def wait_for_server_ready(proc, timeout=5):
             # Process exited
             return False
         
-        # Check if stderr has startup messages
-        if HAS_SELECT:
-            if select.select([proc.stderr], [], [], 0.1)[0]:
-                stderr_output = proc.stderr.readline()
-                if "Server ready" in stderr_output:
-                    return True
-        else:
-            # On Windows, just wait a bit
-            time.sleep(0.1)
+        # Simple time-based wait - just ensure process is still running
+        time.sleep(0.1)
     
     # After timeout, assume ready if still running
     return proc.poll() is None
@@ -100,11 +93,6 @@ def test_stdio_communication():
         
         # Try to read response with timeout
         try:
-            # Read stderr to check server started
-            if HAS_SELECT and select.select([proc.stderr], [], [], 1)[0]:
-                stderr_output = proc.stderr.readline()
-                print(f"Server stderr: {stderr_output.strip()}")
-            
             # Check if server is responsive
             if proc.poll() is not None:
                 print(f"✗ Server exited unexpectedly with code: {proc.returncode}")
