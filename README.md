@@ -3,7 +3,7 @@ MCP servers for my PC
 
 ## CadSlicerPrinter MCP Server
 
-A Python 3 MCP server that enables iterative 3D model design, preview, slicing, and printing through ChatGPT.
+A Python 3 MCP server that enables iterative 3D model design, preview, slicing, and printing through ChatGPT and other MCP-compatible clients.
 
 ### Features
 
@@ -11,6 +11,7 @@ A Python 3 MCP server that enables iterative 3D model design, preview, slicing, 
 - **Preview Rendering**: Visualize models at any stage of the design process
 - **Model Slicing**: Generate G-code using industry-standard slicers
 - **3D Printer Control**: Upload and start print jobs via OctoPrint
+- **OpenAI Compatible**: Uses stdio transport for seamless integration with OpenAI's MCP connectors
 
 ### Quick Start
 
@@ -27,9 +28,20 @@ export SLICER_BIN="/usr/bin/prusa-slicer"
 export OCTOPRINT_URL="http://localhost:5000"
 export OCTOPRINT_API_KEY="your-api-key"
 
-# Run the server
+# Run the server (stdio mode - default, OpenAI compatible)
 cd src
 python server.py
+
+# Or run with HTTP transport for web-based clients
+python server.py --transport streamable-http
 ```
 
-The server will start on `http://localhost:8000/mcp`.
+### Transport Modes
+
+The server supports multiple transport protocols:
+
+- **stdio** (default): Standard input/output - compatible with OpenAI's MCP connectors
+- **streamable-http**: HTTP-based transport at `http://localhost:8000/mcp`
+- **sse**: Server-Sent Events transport
+
+Set the default via `MCP_TRANSPORT` environment variable or use `--transport` flag.
