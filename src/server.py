@@ -1158,7 +1158,7 @@ async def api_slicer_slice(request):
     return JSONResponse(result)
 
 
-async def api_printer_status(request):
+async def api_printer_status(_request):
     """Get printer status"""
     result = printer_status()
     return JSONResponse(result)
@@ -1178,7 +1178,7 @@ async def api_printer_send_gcode(request):
     return JSONResponse(result)
 
 
-async def api_workspace_models(request):
+async def api_workspace_models(_request):
     """List all workspace models"""
     result = workspace_list_models()
     return JSONResponse(result)

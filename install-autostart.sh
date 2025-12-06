@@ -37,9 +37,15 @@ if [ ! -f "$SERVICE_FILE" ]; then
     exit 1
 fi
 
-# Update the service file with the actual paths
+# Create a modified service file with actual paths
+# We keep User=%i so systemd can substitute the username from the instance name
 TEMP_SERVICE="/tmp/cadslicerprinter@.service"
-sed "s|/home/%i/Pc-MCP|$REPO_PATH|g" "$SERVICE_FILE" > "$TEMP_SERVICE"
+
+# Replace path placeholders but keep User=%i intact
+sed -e "s|WorkingDirectory=/home/%i/Pc-MCP/src|WorkingDirectory=$REPO_PATH/src|g" \
+    -e "s|Environment=\"WORKSPACE_DIR=/home/%i/Pc-MCP/workspace\"|Environment=\"WORKSPACE_DIR=$REPO_PATH/workspace\"|g" \
+    -e "s|/home/%i/Pc-MCP/src/server.py|$REPO_PATH/src/server.py|g" \
+    "$SERVICE_FILE" > "$TEMP_SERVICE"
 
 echo "Installing systemd service..."
 cp "$TEMP_SERVICE" "$SYSTEMD_DIR/cadslicerprinter@.service"
