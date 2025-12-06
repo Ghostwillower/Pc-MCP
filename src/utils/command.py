@@ -87,6 +87,11 @@ async def run_command_async(
     the event loop. Use this for rendering, slicing, and other time-intensive
     operations.
     
+    **When to use**:
+    - Use `run_command_async` for long-running commands (>1s) in async contexts
+    - Use `run_command_safe` for quick commands or in synchronous contexts
+    - Prefer async version in MCP tools to avoid blocking other requests
+    
     Args:
         args: Command and arguments as a list
         timeout: Timeout in seconds (uses config default if None)

@@ -31,6 +31,8 @@ Command-line Arguments:
 import sys
 import logging
 import argparse
+import atexit
+import signal
 from pathlib import Path
 
 # Ensure parent directory is in Python path for relative imports
@@ -73,6 +75,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global service instances for cleanup
+_printer_service = None
+
+
+# ============================================================================
+# LIFECYCLE MANAGEMENT
+# ============================================================================
+
+async def cleanup_services():
+    """Clean up service resources on shutdown."""
+    global _printer_service
+    if _printer_service is not None:
+        logger.info("Cleaning up printer service...")
+        await _printer_service.close()
+
+
+def register_cleanup_handlers():
+    """Register cleanup handlers for graceful shutdown."""
+    import asyncio
+    
+    def sync_cleanup():
+        """Synchronous cleanup wrapper."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(cleanup_services())
+            else:
+                loop.run_until_complete(cleanup_services())
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+    
+    # Register cleanup on normal exit
+    atexit.register(sync_cleanup)
+    
+    # Register cleanup on SIGTERM/SIGINT
+    def signal_handler(signum, frame):
+        logger.info("Received shutdown signal, cleaning up...")
+        sync_cleanup()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
 
 # ============================================================================
 # SERVER INITIALIZATION
@@ -85,19 +130,21 @@ def create_mcp_server() -> FastMCP:
     Returns:
         Configured FastMCP instance
     """
+    global _printer_service
+    
     # Initialize FastMCP server
     mcp = FastMCP("CadSlicerPrinter", json_response=True)
     
     # Initialize services
     cad_service = CADService()
     slicer_service = SlicerService()
-    printer_service = PrinterService()
+    _printer_service = PrinterService()  # Store for cleanup
     workspace_service = WorkspaceService()
     
     # Register all tools
     register_cad_tools(mcp, cad_service)
     register_slicer_tools(mcp, slicer_service)
-    register_printer_tools(mcp, printer_service)
+    register_printer_tools(mcp, _printer_service)
     register_workspace_tools(mcp, workspace_service)
     
     return mcp
@@ -365,6 +412,9 @@ def run_web_server(host="127.0.0.1", port=8080):
 # ============================================================================
 
 if __name__ == "__main__":
+    # Register cleanup handlers
+    register_cleanup_handlers()
+    
     args = parse_arguments()
     startup_checks()
     

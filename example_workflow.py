@@ -11,6 +11,10 @@ The workflow simulates:
 3. Code inspection to understand available parameters
 4. Parameter updates based on design comparison
 5. Iteration until design matches target
+
+NOTE: This example uses compatibility wrappers for demonstration purposes.
+The actual MCP tools are defined in src/tools/ and use the services from src/services/.
+When using the MCP server, tools are called via the MCP protocol, not direct function calls.
 """
 
 import os
@@ -27,7 +31,8 @@ _slicer_service = SlicerService()
 _printer_service = PrinterService()
 _workspace_service = WorkspaceService()
 
-# Create compatibility wrapper functions
+# Compatibility wrappers for example code
+# NOTE: Actual MCP usage is via protocol, not direct function calls
 def cad_create_model(description: str):
     return _cad_service.create_model(description)
 
@@ -37,20 +42,28 @@ def cad_get_code(model_id: str):
 def cad_update_parameters(model_id: str, parameters: dict):
     return _cad_service.update_parameters(model_id, parameters)
 
-async def cad_render_preview(model_id: str, view: str = "iso", width: int = 800, height: int = 600):
-    return await _cad_service.render_preview(model_id, view, width, height)
+# Note: These async wrappers maintain sync signatures for this example.
+# Real MCP tools can use async directly.
+def cad_render_preview(model_id: str, view: str = "iso", width: int = 800, height: int = 600):
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_cad_service.render_preview(model_id, view, width, height))
 
 def cad_list_previews(model_id: str):
     return _cad_service.list_previews(model_id)
 
-async def slicer_slice_model(model_id: str, profile: str, extra_args=None):
-    return await _slicer_service.slice_model(model_id, profile, extra_args)
+def slicer_slice_model(model_id: str, profile: str, extra_args=None):
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_slicer_service.slice_model(model_id, profile, extra_args))
 
 def workspace_list_models():
     return _workspace_service.list_models()
 
-async def printer_status():
-    return await _printer_service.get_status()
+def printer_status():
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_printer_service.get_status())
 
 
 def main():
