@@ -48,6 +48,9 @@ SLICER_BIN = os.getenv("SLICER_BIN", "")
 OCTOPRINT_URL = os.getenv("OCTOPRINT_URL", "http://localhost:5000")
 OCTOPRINT_API_KEY = os.getenv("OCTOPRINT_API_KEY", "")
 
+# Constants
+MAX_OUTPUT_LENGTH = 10000  # Maximum length for stdout/stderr output
+
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -130,8 +133,8 @@ def run_command_safe(args: List[str], timeout: int = 60, cwd: Optional[Path] = N
         )
         
         return {
-            "stdout": result.stdout[:10000] if result.stdout else "",  # Truncate if huge
-            "stderr": result.stderr[:10000] if result.stderr else "",  # Truncate if huge
+            "stdout": result.stdout[:MAX_OUTPUT_LENGTH] if result.stdout else "",
+            "stderr": result.stderr[:MAX_OUTPUT_LENGTH] if result.stderr else "",
             "exit_code": result.returncode,
             "success": result.returncode == 0
         }
@@ -370,14 +373,20 @@ def cad_modify_model(model_id: str, instruction: str) -> Dict[str, Any]:
     """
     Iteratively refine a model using text instructions.
     
-    This tool allows you to modify an existing model based on natural language
-    instructions. Use this after creating a model and viewing its preview to
-    make incremental improvements.
+    Note: This is a placeholder implementation that logs modification instructions
+    as comments in the SCAD file. In a production system, you would integrate an
+    LLM or code transformation tool to actually modify the parametric code based
+    on the instruction. For now, ChatGPT can drive modifications by providing
+    specific parameter changes or code edits through multiple calls.
+    
+    This tool allows you to track modification history and provides a foundation
+    for more sophisticated code transformation in the future.
     
     Workflow:
     - After cad_render_preview shows the current state
-    - Use this to adjust parameters, add features, or modify geometry
-    - Then render another preview to see the changes
+    - Use this to document desired changes
+    - Then manually edit the SCAD file or use another tool to apply changes
+    - Render another preview to see the changes
     
     Args:
         model_id: The model identifier
@@ -888,10 +897,6 @@ def printer_send_gcode_line(gcode: str) -> Dict[str, Any]:
                 "error": "OCTOPRINT_API_KEY not configured",
                 "details": "Set the OCTOPRINT_API_KEY environment variable"
             }
-        
-        payload = {
-            "command": gcode
-        }
         
         result = octo_post("/api/printer/command", payload={"commands": [gcode]})
         
