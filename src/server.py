@@ -395,35 +395,219 @@ if (enable_base) {{
 
 
 @mcp.tool()
-def cad_modify_model(model_id: str, instruction: str) -> Dict[str, Any]:
+def cad_get_code(model_id: str) -> Dict[str, Any]:
     """
-    Iteratively refine a model using text instructions.
+    Retrieve the current OpenSCAD code for a model.
     
-    Note: This is a placeholder implementation that logs modification instructions
-    as comments in the SCAD file. In a production system, you would integrate an
-    LLM or code transformation tool to actually modify the parametric code based
-    on the instruction. For now, ChatGPT can drive modifications by providing
-    specific parameter changes or code edits through multiple calls.
+    This is essential for the iterative design workflow. Use this to:
+    - See current parameter values before modifying
+    - Understand the model structure
+    - Check what parameters are available for modification
+    - Review modification history
     
-    This tool allows you to track modification history and provides a foundation
-    for more sophisticated code transformation in the future.
-    
-    Workflow:
-    - After cad_render_preview shows the current state
-    - Use this to document desired changes
-    - Then manually edit the SCAD file or use another tool to apply changes
-    - Render another preview to see the changes
+    The AI can use this to understand the current state of the model
+    before making changes with cad_update_parameters.
     
     Args:
         model_id: The model identifier
-        instruction: Natural language instruction for modification
+        
+    Returns:
+        dict: Contains model_id, scad_path, and scad_code content
+        
+    Example:
+        >>> cad_get_code("abc123")
+        {
+            "model_id": "abc123",
+            "scad_path": "/path/to/main.scad",
+            "scad_code": "// Model code here..."
+        }
+    """
+    try:
+        sanitized_id = sanitize_model_id(model_id)
+        mdir = model_dir(sanitized_id)
+        scad_path = mdir / "main.scad"
+        
+        if not scad_path.exists():
+            return {
+                "error": "Model not found",
+                "details": f"No main.scad found for model {model_id}"
+            }
+        
+        # Read the SCAD file content
+        scad_code = scad_path.read_text()
+        
+        logger.info(f"Retrieved code for model {model_id}")
+        
+        return {
+            "model_id": model_id,
+            "scad_path": str(scad_path.resolve()),
+            "scad_code": scad_code
+        }
+        
+    except ValueError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Error retrieving code: {e}", exc_info=True)
+        return {
+            "error": "Failed to retrieve code",
+            "details": str(e)
+        }
+
+
+@mcp.tool()
+def cad_update_parameters(model_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Update specific parameters in the OpenSCAD model.
+    
+    This is the key tool for iterative design refinement. After viewing a preview
+    and identifying needed changes, use this to update parameter values directly.
+    
+    The iterative workflow:
+    1. cad_render_preview() - See current model
+    2. cad_get_code() - View current parameters (optional)
+    3. cad_update_parameters() - Change specific parameters
+    4. cad_render_preview() - See updated model
+    5. Repeat steps 3-4 until satisfied
+    
+    This tool intelligently updates parameter assignments (e.g., "width = 50;")
+    in the SCAD file while preserving the rest of the code structure.
+    
+    Args:
+        model_id: The model identifier
+        parameters: Dict of parameter names to new values (e.g., {"width": 80, "height": 50})
+        
+    Returns:
+        dict: Contains model_id, scad_path, updated parameters list, and success status
+        
+    Example:
+        >>> cad_update_parameters("abc123", {"width": 80, "height": 50, "wall_thickness": 3})
+        {
+            "model_id": "abc123",
+            "scad_path": "...",
+            "updated": ["width", "height", "wall_thickness"],
+            "changes": {"width": "50 -> 80", "height": "30 -> 50", "wall_thickness": "2 -> 3"}
+        }
+    """
+    try:
+        sanitized_id = sanitize_model_id(model_id)
+        mdir = model_dir(sanitized_id)
+        scad_path = mdir / "main.scad"
+        
+        if not scad_path.exists():
+            return {
+                "error": "Model not found",
+                "details": f"No main.scad found for model {model_id}"
+            }
+        
+        # Read existing content
+        content = scad_path.read_text()
+        
+        updated = []
+        changes = {}
+        not_found = []
+        
+        # Update each parameter
+        for param_name, param_value in parameters.items():
+            # Look for parameter assignment pattern: param_name = value;
+            # Handles both numeric and boolean values
+            # Note: Pattern is compiled per parameter to support dynamic param_name
+            pattern = re.compile(
+                rf'^(\s*)({re.escape(param_name)})\s*=\s*([^;]+);',
+                re.MULTILINE
+            )
+            
+            match = pattern.search(content)
+            if match:
+                old_value = match.group(3).strip()
+                
+                # Format new value based on type
+                if isinstance(param_value, bool):
+                    new_value = "true" if param_value else "false"
+                elif isinstance(param_value, str):
+                    # Check if it's already a string literal or needs quotes
+                    if not (param_value.startswith('"') and param_value.endswith('"')):
+                        new_value = f'"{param_value}"'
+                    else:
+                        new_value = param_value
+                else:
+                    new_value = str(param_value)
+                
+                # Replace the parameter value
+                new_line = f'{match.group(1)}{param_name} = {new_value};'
+                content = pattern.sub(new_line, content, count=1)
+                
+                updated.append(param_name)
+                changes[param_name] = f"{old_value} -> {new_value}"
+            else:
+                not_found.append(param_name)
+        
+        # Write updated content back to file
+        if updated:
+            # Add modification log comment
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            mod_log = f"\n// Updated parameters at {timestamp}: {', '.join(updated)}\n"
+            content = content + mod_log
+            
+            scad_path.write_text(content)
+            
+            logger.info(f"Updated parameters for model {model_id}: {updated}")
+            
+            result = {
+                "model_id": model_id,
+                "scad_path": str(scad_path.resolve()),
+                "updated": updated,
+                "changes": changes
+            }
+            
+            if not_found:
+                result["not_found"] = not_found
+                result["warning"] = f"Parameters not found: {', '.join(not_found)}"
+            
+            return result
+        else:
+            return {
+                "error": "No parameters updated",
+                "details": f"None of the specified parameters were found in the model",
+                "not_found": not_found,
+                "hint": "Use cad_get_code() to see available parameters"
+            }
+        
+    except ValueError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Error updating parameters: {e}", exc_info=True)
+        return {
+            "error": "Failed to update parameters",
+            "details": str(e)
+        }
+
+
+@mcp.tool()
+def cad_modify_model(model_id: str, instruction: str) -> Dict[str, Any]:
+    """
+    Log a modification instruction for a model.
+    
+    This tool records modification intentions as comments in the SCAD file.
+    For actual parameter updates, use cad_update_parameters() instead.
+    
+    Recommended workflow for iterative design:
+    1. cad_render_preview() - See current state
+    2. Compare preview with target design
+    3. cad_get_code() - See current parameters
+    4. cad_update_parameters() - Make specific changes
+    5. cad_render_preview() - Verify changes
+    6. Repeat 2-5 until design matches target
+    
+    Args:
+        model_id: The model identifier
+        instruction: Natural language instruction documenting the intended modification
         
     Returns:
         dict: Contains model_id, scad_path, and note about changes
         
     Example:
-        >>> cad_modify_model("abc123", "Increase the height to 50mm")
-        {"model_id": "abc123", "scad_path": "...", "note": "Modified model"}
+        >>> cad_modify_model("abc123", "Need to increase height for better stability")
+        {"model_id": "abc123", "scad_path": "...", "note": "Added modification note"}
     """
     try:
         sanitized_id = sanitize_model_id(model_id)
@@ -440,22 +624,19 @@ def cad_modify_model(model_id: str, instruction: str) -> Dict[str, Any]:
         existing_content = scad_path.read_text()
         
         # Add modification instruction as a comment
-        # In a real implementation, you might use an LLM to actually modify the code
-        # For now, we'll append a modification note
-        modification_note = f"\n// MODIFICATION: {instruction}\n// Applied at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        modification_note = f"\n// NOTE: {instruction}\n// Logged at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
         
-        # Simple modification: append the instruction as a comment
-        # ChatGPT can drive more sophisticated modifications through multiple calls
         modified_content = existing_content + modification_note
         
         scad_path.write_text(modified_content)
         
-        logger.info(f"Modified model {model_id}: {instruction}")
+        logger.info(f"Added note to model {model_id}: {instruction}")
         
         return {
             "model_id": model_id,
             "scad_path": str(scad_path.resolve()),
-            "note": f"Added modification instruction: {instruction}"
+            "note": f"Added modification note: {instruction}",
+            "hint": "Use cad_update_parameters() to make actual parameter changes"
         }
         
     except ValueError as e:
@@ -1052,15 +1233,21 @@ def startup_checks():
     
     logger.info("=" * 80)
     logger.info("Server ready. Available tools:")
-    logger.info("  - cad_create_model")
-    logger.info("  - cad_modify_model")
-    logger.info("  - cad_render_preview")
-    logger.info("  - cad_list_previews")
-    logger.info("  - slicer_slice_model")
-    logger.info("  - printer_status")
-    logger.info("  - printer_upload_and_start")
-    logger.info("  - printer_send_gcode_line")
-    logger.info("  - workspace_list_models")
+    logger.info("  CAD Design:")
+    logger.info("    - cad_create_model")
+    logger.info("    - cad_get_code (NEW: retrieve model source code)")
+    logger.info("    - cad_update_parameters (NEW: modify parameters for iteration)")
+    logger.info("    - cad_modify_model")
+    logger.info("    - cad_render_preview")
+    logger.info("    - cad_list_previews")
+    logger.info("  Slicing:")
+    logger.info("    - slicer_slice_model")
+    logger.info("  Printing:")
+    logger.info("    - printer_status")
+    logger.info("    - printer_upload_and_start")
+    logger.info("    - printer_send_gcode_line")
+    logger.info("  Workspace:")
+    logger.info("    - workspace_list_models")
     logger.info("=" * 80)
 
 
@@ -1124,6 +1311,23 @@ async def api_cad_modify(request):
     result = cad_modify_model(
         model_id=data.get("model_id", ""),
         instruction=data.get("instruction", "")
+    )
+    return JSONResponse(result)
+
+
+async def api_cad_get_code(request):
+    """Get the OpenSCAD code for a model"""
+    data = await request.json()
+    result = cad_get_code(model_id=data.get("model_id", ""))
+    return JSONResponse(result)
+
+
+async def api_cad_update_parameters(request):
+    """Update parameters in a CAD model"""
+    data = await request.json()
+    result = cad_update_parameters(
+        model_id=data.get("model_id", ""),
+        parameters=data.get("parameters", {})
     )
     return JSONResponse(result)
 
@@ -1200,6 +1404,8 @@ def create_web_app():
         Route("/api/health", api_health, methods=["GET"]),
         Route("/api/cad/create", api_cad_create, methods=["POST"]),
         Route("/api/cad/modify", api_cad_modify, methods=["POST"]),
+        Route("/api/cad/get-code", api_cad_get_code, methods=["POST"]),
+        Route("/api/cad/update-parameters", api_cad_update_parameters, methods=["POST"]),
         Route("/api/cad/preview", api_cad_preview, methods=["POST"]),
         Route("/api/cad/list-previews", api_cad_list_previews, methods=["POST"]),
         Route("/api/slicer/slice", api_slicer_slice, methods=["POST"]),

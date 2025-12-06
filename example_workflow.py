@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating the CadSlicerPrinter MCP server workflow.
+Example script demonstrating the iterative CAD workflow in the CadSlicerPrinter MCP server.
 
-This script shows how to use the server tools for a complete design-to-print workflow.
-Note: This is a demonstration script. In practice, these tools would be called
-by an MCP client (like ChatGPT) through the MCP protocol.
+This script shows how an AI client (like ChatGPT) can iteratively refine a 3D model
+by comparing preview images to target requirements and updating parameters accordingly.
+
+The workflow simulates:
+1. Initial model creation
+2. Preview rendering to see current state
+3. Code inspection to understand available parameters
+4. Parameter updates based on design comparison
+5. Iteration until design matches target
 """
 
 import os
@@ -13,8 +19,9 @@ sys.path.insert(0, 'src')
 
 from server import (
     cad_create_model,
+    cad_get_code,
+    cad_update_parameters,
     cad_render_preview,
-    cad_modify_model,
     cad_list_previews,
     slicer_slice_model,
     workspace_list_models,
@@ -24,11 +31,11 @@ from server import (
 
 def main():
     print("=" * 80)
-    print("CadSlicerPrinter MCP Server - Example Workflow")
+    print("CadSlicerPrinter MCP Server - Iterative Design Workflow Example")
     print("=" * 80)
     
-    # Step 1: Create a model
-    print("\n[1] Creating a parametric model...")
+    # Step 1: Create initial model
+    print("\n[1] Creating initial parametric model...")
     result = cad_create_model("A parametric phone stand with adjustable viewing angle")
     
     if "error" in result:
@@ -39,20 +46,85 @@ def main():
     print(f"  ✓ Model created: {model_id}")
     print(f"  ✓ SCAD file: {result['scad_path']}")
     
-    # Step 2: Modify the model
-    print("\n[2] Modifying the model...")
-    mod_result = cad_modify_model(
+    # Step 2: Get current code to see what parameters are available
+    print("\n[2] Inspecting model parameters...")
+    code_result = cad_get_code(model_id)
+    
+    if "error" in code_result:
+        print(f"  ✗ Error: {code_result['error']}")
+    else:
+        print(f"  ✓ Retrieved model code ({len(code_result['scad_code'])} bytes)")
+        # Extract and display parameter section
+        code = code_result['scad_code']
+        if "// PARAMETERS" in code:
+            param_section = code.split("// MODEL DEFINITION")[0]
+            print("  ✓ Available parameters found")
+        else:
+            print("  ✓ Model code retrieved")
+    
+    # Step 3: Simulate iterative refinement
+    print("\n[3] Simulating iterative design refinement...")
+    
+    # Iteration 1: AI would render preview, compare to target, decide to increase width
+    print("\n  Iteration 1: Adjusting base dimensions")
+    print("    (Simulated: AI sees preview is too narrow, needs more stability)")
+    
+    update1 = cad_update_parameters(
         model_id,
-        "Increase the base width to 80mm for better stability"
+        {
+            "width": 80,  # Increase from default 50
+            "depth": 80,  # Increase from default 50
+        }
     )
     
-    if "error" in mod_result:
-        print(f"  ✗ Error: {mod_result['error']}")
+    if "error" not in update1:
+        print(f"    ✓ Updated: {', '.join(update1['updated'])}")
+        for param, change in update1.get('changes', {}).items():
+            print(f"      - {param}: {change}")
     else:
-        print(f"  ✓ {mod_result['note']}")
+        print(f"    ✗ {update1['error']}")
     
-    # Step 3: List previews (none yet, but demonstrates the API)
-    print("\n[3] Checking for previews...")
+    # Iteration 2: AI would render new preview, see it needs more height
+    print("\n  Iteration 2: Adjusting height and features")
+    print("    (Simulated: AI compares new preview to target, adjusts height)")
+    
+    update2 = cad_update_parameters(
+        model_id,
+        {
+            "height": 50,          # Increase from default 30
+            "wall_thickness": 3,   # Increase from default 2
+            "enable_holes": True,  # Enable mounting holes
+        }
+    )
+    
+    if "error" not in update2:
+        print(f"    ✓ Updated: {', '.join(update2['updated'])}")
+        for param, change in update2.get('changes', {}).items():
+            print(f"      - {param}: {change}")
+    else:
+        print(f"    ✗ {update2['error']}")
+    
+    # Step 4: Verify final parameters
+    print("\n[4] Verifying final model state...")
+    final_code = cad_get_code(model_id)
+    
+    if "error" not in final_code:
+        code = final_code['scad_code']
+        checks = [
+            ("width = 80;", "Width set to 80mm"),
+            ("depth = 80;", "Depth set to 80mm"),
+            ("height = 50;", "Height set to 50mm"),
+            ("wall_thickness = 3;", "Wall thickness set to 3mm"),
+            ("enable_holes = true;", "Mounting holes enabled"),
+        ]
+        
+        print("  Final parameter values:")
+        for check_str, description in checks:
+            if check_str in code:
+                print(f"    ✓ {description}")
+    
+    # Step 5: List previews (would show iteration history if rendered)
+    print("\n[5] Checking preview history...")
     prev_result = cad_list_previews(model_id)
     
     if "error" in prev_result:
@@ -60,13 +132,13 @@ def main():
     else:
         print(f"  ✓ Found {len(prev_result['previews'])} preview(s)")
         
-        # Note: To actually render a preview, you would call:
-        # render_result = cad_render_preview(model_id, view="iso", width=1024, height=768)
-        # But this requires OpenSCAD to be installed
-        print("  ℹ To render preview: cad_render_preview(model_id, 'iso', 1024, 768)")
+        # Note about rendering
+        print("\n  ℹ To render preview (requires OpenSCAD):")
+        print(f"    result = cad_render_preview('{model_id}', view='iso', width=1024, height=768)")
+        print("    This would generate a PNG showing the current model state")
     
-    # Step 4: List workspace models
-    print("\n[4] Listing workspace models...")
+    # Step 6: List workspace models
+    print("\n[6] Workspace summary...")
     ws_result = workspace_list_models()
     
     if "error" in ws_result:
@@ -79,35 +151,38 @@ def main():
                   f"GCODE={'✓' if model['gcode_exists'] else '✗'}, "
                   f"Previews={model['previews']}")
     
-    # Step 5: Check printer status (will fail without OctoPrint configured)
-    print("\n[5] Checking printer status...")
-    printer_result = printer_status()
-    
-    if "error" in printer_result:
-        print(f"  ⚠ {printer_result['error']}")
-        print(f"  ℹ Configure OCTOPRINT_URL and OCTOPRINT_API_KEY to use printer features")
-    else:
-        print(f"  ✓ Printer status retrieved")
-        if "job" in printer_result:
-            print(f"    Job state: {printer_result['job'].get('state', 'unknown')}")
-        if "printer" in printer_result:
-            print(f"    Printer state: {printer_result['printer'].get('state', {}).get('text', 'unknown')}")
-    
-    # Summary
+    # Step 7: Next steps for full workflow
     print("\n" + "=" * 80)
-    print("Workflow Summary:")
-    print("  ✓ Model created and stored")
-    print("  ✓ Model modification logged")
-    print("  ℹ Next steps (require external tools):")
-    print("    1. Set OPENSCAD_BIN environment variable")
-    print("    2. Call cad_render_preview() to see your model")
-    print("    3. Set SLICER_BIN and call slicer_slice_model()")
-    print("    4. Set OCTOPRINT_API_KEY and call printer_upload_and_start()")
+    print("Iterative Design Workflow Summary:")
+    print("=" * 80)
+    print("  ✓ Model created with parametric design")
+    print("  ✓ Parameters inspected via code retrieval")
+    print("  ✓ Multiple iterations of parameter updates")
+    print("  ✓ Changes verified in final code")
+    print("")
+    print("Complete Workflow (with external tools configured):")
+    print("  1. cad_create_model() - Generate initial design")
+    print("  2. cad_render_preview() - See current state")
+    print("  3. cad_get_code() - Inspect parameters")
+    print("  4. cad_update_parameters() - Refine based on comparison")
+    print("  5. Repeat steps 2-4 until design matches target")
+    print("  6. slicer_slice_model() - Generate G-code")
+    print("  7. printer_upload_and_start() - Begin printing")
+    print("")
+    print("Configuration needed for full functionality:")
+    print("  - OPENSCAD_BIN: Path to OpenSCAD for preview rendering")
+    print("  - SLICER_BIN: Path to slicer for G-code generation")
+    print("  - OCTOPRINT_URL & OCTOPRINT_API_KEY: For printer control")
     print("=" * 80)
     
     print(f"\n✓ Example completed successfully!")
     print(f"  Model ID: {model_id}")
     print(f"  Model directory: workspace/models/{model_id}/")
+    print(f"\n💡 Key Innovation: AI can now iteratively refine models by:")
+    print(f"  - Viewing previews to see current design")
+    print(f"  - Comparing to target requirements")
+    print(f"  - Updating specific parameters")
+    print(f"  - Repeating until design is perfect!")
 
 
 if __name__ == "__main__":

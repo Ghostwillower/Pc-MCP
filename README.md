@@ -7,13 +7,34 @@ A Python 3 MCP server that enables iterative 3D model design, preview, slicing, 
 
 ### Features
 
-- **CAD Model Design**: Create and modify parametric OpenSCAD models using natural language
+- **Iterative CAD Design**: AI-driven iterative model refinement with visual feedback loop
+  - Create parametric OpenSCAD models from natural language descriptions
+  - Retrieve current model parameters and code
+  - Update parameters based on comparing preview images to target design
+  - Iterate until the model matches the desired output
 - **Preview Rendering**: Visualize models at any stage of the design process
 - **Model Slicing**: Generate G-code using industry-standard slicers
 - **3D Printer Control**: Upload and start print jobs via OctoPrint
 - **Web Control Panel**: Minimalist web interface for controlling all functions
 - **Auto-Start Support**: Run as a system service on boot without GUI
 - **OpenAI Compatible**: Uses stdio transport for seamless integration with OpenAI's MCP connectors
+
+### Iterative Design Workflow
+
+The server enables true AI-driven iterative design:
+
+1. **Create** - AI generates initial parametric model from description
+2. **Preview** - System renders PNG image of current model state
+3. **Compare** - AI compares preview to target design requirements
+4. **Update** - AI modifies specific parameters based on differences
+5. **Repeat** - Steps 2-4 iterate until design matches target
+
+Example iteration:
+```
+AI: Creates phone stand → Preview shows it's too narrow
+AI: Updates width from 50mm to 80mm → Preview confirms improvement
+AI: Updates angle from 45° to 60° → Preview matches target design
+```
 
 ### Quick Start
 
