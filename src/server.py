@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-CadSlicerPrinter MCP Server
+CadSlicerPrinter MCP Server - Redesigned for Maximum Backend Efficiency
 
-A Python 3 MCP server that enables iterative 3D model design, preview, slicing, and printing.
-Provides tools for:
-- CAD model creation and modification using OpenSCAD
-- Preview rendering
-- Model slicing with standard slicers (PrusaSlicer, Orca, CuraEngine)
-- 3D printer control via OctoPrint
+A Python 3 MCP server that enables iterative 3D model design, preview, slicing,
+and printing through ChatGPT and other MCP-compatible clients, or via the
+included web control panel.
+
+This redesigned version follows the OpenAI MCP framework with:
+- Modular architecture for better maintainability
+- Async operations for improved performance
+- Connection pooling for external APIs
+- Cached configuration and path lookups
+- Clean separation of concerns (config, services, tools, web API)
 
 Environment Variables:
 - WORKSPACE_DIR: Directory for models, previews, and gcode (default: ./workspace)
@@ -19,22 +23,36 @@ Environment Variables:
 
 Command-line Arguments:
 - --transport: Override MCP_TRANSPORT setting (stdio, sse, or streamable-http)
+- --web: Enable web control panel (runs on port 8080)
+- --port: Port for web control panel (default: 8080)
+- --host: Host to bind web server to (default: 127.0.0.1)
 """
 
-import os
-import re
 import sys
 import logging
-import subprocess
-import uuid
-import json
-import time
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, Any, List
 
-import requests
+# Ensure parent directory is in Python path for relative imports
+_src_dir = Path(__file__).parent
+if str(_src_dir) not in sys.path:
+    sys.path.insert(0, str(_src_dir))
+
 from mcp.server.fastmcp import FastMCP
+
+# Import configuration
+from config import get_settings
+
+# Import services
+from services import CADService, SlicerService, PrinterService, WorkspaceService
+
+# Import tool registration functions
+from tools import (
+    register_cad_tools,
+    register_slicer_tools,
+    register_printer_tools,
+    register_workspace_tools,
+)
 
 # Optional web server imports - only needed for --web mode
 try:
@@ -55,1188 +73,81 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastMCP server
-mcp = FastMCP("CadSlicerPrinter", json_response=True)
 
-# Environment configuration
-WORKSPACE_DIR = os.getenv("WORKSPACE_DIR", "./workspace")
-OPENSCAD_BIN = os.getenv("OPENSCAD_BIN", "openscad")
-SLICER_BIN = os.getenv("SLICER_BIN", "")
-OCTOPRINT_URL = os.getenv("OCTOPRINT_URL", "http://localhost:5000")
-OCTOPRINT_API_KEY = os.getenv("OCTOPRINT_API_KEY", "")
+# ============================================================================
+# SERVER INITIALIZATION
+# ============================================================================
 
-# Validate and set MCP transport
-_VALID_TRANSPORTS = ["stdio", "sse", "streamable-http"]
-_transport_env = os.getenv("MCP_TRANSPORT", "stdio")
-if _transport_env not in _VALID_TRANSPORTS:
-    logger.warning(f"Invalid MCP_TRANSPORT '{_transport_env}', using default 'stdio'")
-    MCP_TRANSPORT = "stdio"
-else:
-    MCP_TRANSPORT = _transport_env
-
-# Constants
-MAX_OUTPUT_LENGTH = 10000  # Maximum length for stdout/stderr output
+def create_mcp_server() -> FastMCP:
+    """
+    Create and configure the MCP server with all tools.
+    
+    Returns:
+        Configured FastMCP instance
+    """
+    # Initialize FastMCP server
+    mcp = FastMCP("CadSlicerPrinter", json_response=True)
+    
+    # Initialize services
+    cad_service = CADService()
+    slicer_service = SlicerService()
+    printer_service = PrinterService()
+    workspace_service = WorkspaceService()
+    
+    # Register all tools
+    register_cad_tools(mcp, cad_service)
+    register_slicer_tools(mcp, slicer_service)
+    register_printer_tools(mcp, printer_service)
+    register_workspace_tools(mcp, workspace_service)
+    
+    return mcp
 
 
 # ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def ensure_workspace() -> Path:
-    """
-    Ensure the workspace directory exists.
-    
-    Returns:
-        Path: Absolute path to the workspace directory
-    """
-    workspace = Path(WORKSPACE_DIR).resolve()
-    workspace.mkdir(parents=True, exist_ok=True)
-    models_dir = workspace / "models"
-    models_dir.mkdir(exist_ok=True)
-    return workspace
-
-
-def sanitize_model_id(model_id: str) -> str:
-    """
-    Sanitize model_id to prevent directory traversal attacks.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        str: Sanitized model_id
-        
-    Raises:
-        ValueError: If model_id contains invalid characters
-    """
-    # Only allow alphanumeric, hyphens, and underscores
-    if not re.match(r'^[a-zA-Z0-9_-]+$', model_id):
-        raise ValueError(f"Invalid model_id: {model_id}. Only alphanumeric, hyphens, and underscores allowed.")
-    return model_id
-
-
-def model_dir(model_id: str) -> Path:
-    """
-    Get the directory path for a specific model.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        Path: Absolute path to the model directory
-        
-    Raises:
-        ValueError: If model_id is invalid
-    """
-    sanitized_id = sanitize_model_id(model_id)
-    workspace = ensure_workspace()
-    return workspace / "models" / sanitized_id
-
-
-def run_command_safe(args: List[str], timeout: int = 60, cwd: Optional[Path] = None) -> Dict[str, Any]:
-    """
-    Safely run a command and capture output.
-    
-    This is an internal helper function for calling external CAD and slicer binaries.
-    It does NOT expose arbitrary command execution as a tool.
-    
-    Args:
-        args: Command and arguments as a list
-        timeout: Timeout in seconds
-        cwd: Working directory for command execution
-        
-    Returns:
-        dict: Contains stdout, stderr, exit_code, and optional error message
-    """
-    try:
-        result = subprocess.run(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            cwd=cwd,
-            text=True
-        )
-        
-        return {
-            "stdout": result.stdout[:MAX_OUTPUT_LENGTH] if result.stdout else "",
-            "stderr": result.stderr[:MAX_OUTPUT_LENGTH] if result.stderr else "",
-            "exit_code": result.returncode,
-            "success": result.returncode == 0
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "stdout": "",
-            "stderr": f"Command timed out after {timeout} seconds",
-            "exit_code": -1,
-            "success": False,
-            "error": "timeout"
-        }
-    except FileNotFoundError:
-        return {
-            "stdout": "",
-            "stderr": f"Command not found: {args[0]}",
-            "exit_code": -1,
-            "success": False,
-            "error": "command_not_found"
-        }
-    except Exception as e:
-        return {
-            "stdout": "",
-            "stderr": str(e),
-            "exit_code": -1,
-            "success": False,
-            "error": str(e)
-        }
-
-
-def octo_get(path: str) -> Dict[str, Any]:
-    """
-    Make a GET request to OctoPrint API.
-    
-    Args:
-        path: API path (e.g., "/api/job")
-        
-    Returns:
-        dict: Response data or error information
-    """
-    if not OCTOPRINT_API_KEY:
-        return {"error": "OCTOPRINT_API_KEY not configured"}
-    
-    try:
-        url = f"{OCTOPRINT_URL.rstrip('/')}{path}"
-        headers = {"X-Api-Key": OCTOPRINT_API_KEY}
-        response = requests.get(url, headers=headers, timeout=10)
-        
-        if response.status_code == 204:
-            return {"status": 204}
-        
-        if response.status_code in (200, 201):
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return {"status": response.status_code, "body": response.text}
-        
-        return {
-            "error": f"HTTP {response.status_code}",
-            "status": response.status_code,
-            "body": response.text[:500]
-        }
-    except requests.RequestException as e:
-        return {"error": f"Request failed: {str(e)}"}
-
-
-def octo_post(path: str, payload: Optional[Dict[str, Any]] = None, files: Optional[Dict] = None) -> Dict[str, Any]:
-    """
-    Make a POST request to OctoPrint API.
-    
-    Args:
-        path: API path
-        payload: JSON payload (optional)
-        files: Files to upload (optional)
-        
-    Returns:
-        dict: Response data or error information
-    """
-    if not OCTOPRINT_API_KEY:
-        return {"error": "OCTOPRINT_API_KEY not configured"}
-    
-    try:
-        url = f"{OCTOPRINT_URL.rstrip('/')}{path}"
-        headers = {"X-Api-Key": OCTOPRINT_API_KEY}
-        
-        if files:
-            # Don't set Content-Type for multipart/form-data
-            response = requests.post(url, headers=headers, files=files, data=payload, timeout=30)
-        else:
-            headers["Content-Type"] = "application/json"
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-        
-        if response.status_code == 204:
-            return {"status": 204}
-        
-        if response.status_code in (200, 201):
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return {"status": response.status_code, "body": response.text}
-        
-        return {
-            "error": f"HTTP {response.status_code}",
-            "status": response.status_code,
-            "body": response.text[:500]
-        }
-    except requests.RequestException as e:
-        return {"error": f"Request failed: {str(e)}"}
-
-
-# ============================================================================
-# MCP TOOLS
-# ============================================================================
-
-@mcp.tool()
-def cad_create_model(description: str) -> Dict[str, Any]:
-    """
-    Generate an initial parametric CAD file from a natural-language description.
-    
-    This is the first step in the iterative design workflow:
-    1. cad_create_model (create initial model)
-    2. cad_render_preview (see what it looks like)
-    3. cad_modify_model (refine based on preview)
-    4. Repeat steps 2-3 as needed
-    5. slicer_slice_model (prepare for printing)
-    6. printer_upload_and_start (print the model)
-    
-    Args:
-        description: Natural language description of the desired 3D model
-        
-    Returns:
-        dict: Contains model_id and scad_path, or error information
-        
-    Example:
-        >>> cad_create_model("A parametric phone stand with adjustable angle")
-        {"model_id": "abc123", "scad_path": "/path/to/workspace/models/abc123/main.scad"}
-    """
-    try:
-        # Generate unique model ID
-        model_id = str(uuid.uuid4())[:8]
-        
-        # Create model directory
-        mdir = model_dir(model_id)
-        mdir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate OpenSCAD template
-        # This is a simple parametric template that can be hand-edited
-        scad_content = f"""// {description}
-// Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}
-
-// ============================================================================
-// PARAMETERS - Modify these to customize the model
-// ============================================================================
-
-// Basic dimensions
-width = 50;
-depth = 50;
-height = 30;
-
-// Feature toggles
-enable_base = true;
-enable_holes = false;
-
-// Advanced parameters
-wall_thickness = 2;
-corner_radius = 3;
-
-// ============================================================================
-// MODEL DEFINITION
-// ============================================================================
-
-module main_body() {{
-    // Create the main body with rounded corners
-    hull() {{
-        for (x = [corner_radius, width - corner_radius]) {{
-            for (y = [corner_radius, depth - corner_radius]) {{
-                translate([x, y, 0])
-                    cylinder(r = corner_radius, h = height, $fn = 30);
-            }}
-        }}
-    }}
-}}
-
-module holes() {{
-    // Example: mounting holes in corners
-    hole_diameter = 3;
-    hole_inset = 8;
-    
-    for (x = [hole_inset, width - hole_inset]) {{
-        for (y = [hole_inset, depth - hole_inset]) {{
-            translate([x, y, -1])
-                cylinder(d = hole_diameter, h = height + 2, $fn = 20);
-        }}
-    }}
-}}
-
-// ============================================================================
-// FINAL MODEL ASSEMBLY
-// ============================================================================
-
-difference() {{
-    main_body();
-    
-    // Optionally add holes
-    if (enable_holes) {{
-        holes();
-    }}
-}}
-
-// Add a base plate if enabled
-if (enable_base) {{
-    translate([0, 0, -2])
-        cube([width, depth, 2]);
-}}
-"""
-        
-        scad_path = mdir / "main.scad"
-        scad_path.write_text(scad_content)
-        
-        logger.info(f"Created model {model_id} at {scad_path}")
-        
-        return {
-            "model_id": model_id,
-            "scad_path": str(scad_path.resolve()),
-        }
-        
-    except Exception as e:
-        logger.error(f"Error creating model: {e}", exc_info=True)
-        return {
-            "error": "Failed to create model",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def cad_get_code(model_id: str) -> Dict[str, Any]:
-    """
-    Retrieve the current OpenSCAD code for a model.
-    
-    This is essential for the iterative design workflow. Use this to:
-    - See current parameter values before modifying
-    - Understand the model structure
-    - Check what parameters are available for modification
-    - Review modification history
-    
-    The AI can use this to understand the current state of the model
-    before making changes with cad_update_parameters.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        dict: Contains model_id, scad_path, and scad_code content
-        
-    Example:
-        >>> cad_get_code("abc123")
-        {
-            "model_id": "abc123",
-            "scad_path": "/path/to/main.scad",
-            "scad_code": "// Model code here..."
-        }
-    """
-    try:
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        scad_path = mdir / "main.scad"
-        
-        if not scad_path.exists():
-            return {
-                "error": "Model not found",
-                "details": f"No main.scad found for model {model_id}"
-            }
-        
-        # Read the SCAD file content
-        scad_code = scad_path.read_text()
-        
-        logger.info(f"Retrieved code for model {model_id}")
-        
-        return {
-            "model_id": model_id,
-            "scad_path": str(scad_path.resolve()),
-            "scad_code": scad_code
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error retrieving code: {e}", exc_info=True)
-        return {
-            "error": "Failed to retrieve code",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def cad_update_parameters(model_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Update specific parameters in the OpenSCAD model.
-    
-    This is the key tool for iterative design refinement. After viewing a preview
-    and identifying needed changes, use this to update parameter values directly.
-    
-    The iterative workflow:
-    1. cad_render_preview() - See current model
-    2. cad_get_code() - View current parameters (optional)
-    3. cad_update_parameters() - Change specific parameters
-    4. cad_render_preview() - See updated model
-    5. Repeat steps 3-4 until satisfied
-    
-    This tool intelligently updates parameter assignments (e.g., "width = 50;")
-    in the SCAD file while preserving the rest of the code structure.
-    
-    Args:
-        model_id: The model identifier
-        parameters: Dict of parameter names to new values (e.g., {"width": 80, "height": 50})
-        
-    Returns:
-        dict: Contains model_id, scad_path, updated parameters list, and success status
-        
-    Example:
-        >>> cad_update_parameters("abc123", {"width": 80, "height": 50, "wall_thickness": 3})
-        {
-            "model_id": "abc123",
-            "scad_path": "...",
-            "updated": ["width", "height", "wall_thickness"],
-            "changes": {"width": "50 -> 80", "height": "30 -> 50", "wall_thickness": "2 -> 3"}
-        }
-    """
-    try:
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        scad_path = mdir / "main.scad"
-        
-        if not scad_path.exists():
-            return {
-                "error": "Model not found",
-                "details": f"No main.scad found for model {model_id}"
-            }
-        
-        # Read existing content
-        content = scad_path.read_text()
-        
-        updated = []
-        changes = {}
-        not_found = []
-        
-        # Update each parameter
-        for param_name, param_value in parameters.items():
-            # Look for parameter assignment pattern: param_name = value;
-            # Handles both numeric and boolean values
-            # Note: Pattern is compiled per parameter to support dynamic param_name
-            pattern = re.compile(
-                rf'^(\s*)({re.escape(param_name)})\s*=\s*([^;]+);',
-                re.MULTILINE
-            )
-            
-            match = pattern.search(content)
-            if match:
-                old_value = match.group(3).strip()
-                
-                # Format new value based on type
-                if isinstance(param_value, bool):
-                    new_value = "true" if param_value else "false"
-                elif isinstance(param_value, str):
-                    # Check if it's already a string literal or needs quotes
-                    if not (param_value.startswith('"') and param_value.endswith('"')):
-                        new_value = f'"{param_value}"'
-                    else:
-                        new_value = param_value
-                else:
-                    new_value = str(param_value)
-                
-                # Replace the parameter value
-                new_line = f'{match.group(1)}{param_name} = {new_value};'
-                content = pattern.sub(new_line, content, count=1)
-                
-                updated.append(param_name)
-                changes[param_name] = f"{old_value} -> {new_value}"
-            else:
-                not_found.append(param_name)
-        
-        # Write updated content back to file
-        if updated:
-            # Add modification log comment
-            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-            mod_log = f"\n// Updated parameters at {timestamp}: {', '.join(updated)}\n"
-            content = content + mod_log
-            
-            scad_path.write_text(content)
-            
-            logger.info(f"Updated parameters for model {model_id}: {updated}")
-            
-            result = {
-                "model_id": model_id,
-                "scad_path": str(scad_path.resolve()),
-                "updated": updated,
-                "changes": changes
-            }
-            
-            if not_found:
-                result["not_found"] = not_found
-                result["warning"] = f"Parameters not found: {', '.join(not_found)}"
-            
-            return result
-        else:
-            return {
-                "error": "No parameters updated",
-                "details": f"None of the specified parameters were found in the model",
-                "not_found": not_found,
-                "hint": "Use cad_get_code() to see available parameters"
-            }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error updating parameters: {e}", exc_info=True)
-        return {
-            "error": "Failed to update parameters",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def cad_modify_model(model_id: str, instruction: str) -> Dict[str, Any]:
-    """
-    Log a modification instruction for a model.
-    
-    This tool records modification intentions as comments in the SCAD file.
-    For actual parameter updates, use cad_update_parameters() instead.
-    
-    Recommended workflow for iterative design:
-    1. cad_render_preview() - See current state
-    2. Compare preview with target design
-    3. cad_get_code() - See current parameters
-    4. cad_update_parameters() - Make specific changes
-    5. cad_render_preview() - Verify changes
-    6. Repeat 2-5 until design matches target
-    
-    Args:
-        model_id: The model identifier
-        instruction: Natural language instruction documenting the intended modification
-        
-    Returns:
-        dict: Contains model_id, scad_path, and note about changes
-        
-    Example:
-        >>> cad_modify_model("abc123", "Need to increase height for better stability")
-        {"model_id": "abc123", "scad_path": "...", "note": "Added modification note"}
-    """
-    try:
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        scad_path = mdir / "main.scad"
-        
-        if not scad_path.exists():
-            return {
-                "error": "Model not found",
-                "details": f"No main.scad found for model {model_id}"
-            }
-        
-        # Read existing content
-        existing_content = scad_path.read_text()
-        
-        # Add modification instruction as a comment
-        modification_note = f"\n// NOTE: {instruction}\n// Logged at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        
-        modified_content = existing_content + modification_note
-        
-        scad_path.write_text(modified_content)
-        
-        logger.info(f"Added note to model {model_id}: {instruction}")
-        
-        return {
-            "model_id": model_id,
-            "scad_path": str(scad_path.resolve()),
-            "note": f"Added modification note: {instruction}",
-            "hint": "Use cad_update_parameters() to make actual parameter changes"
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error modifying model: {e}", exc_info=True)
-        return {
-            "error": "Failed to modify model",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def cad_render_preview(
-    model_id: str,
-    view: str = "iso",
-    width: int = 800,
-    height: int = 600
-) -> Dict[str, Any]:
-    """
-    Render a preview PNG of the model so you can see what it looks like.
-    
-    This is crucial in the iterative design workflow. After creating or modifying
-    a model, use this to visualize the current state before proceeding with
-    further modifications or slicing.
-    
-    Workflow integration:
-    - After cad_create_model: render to see initial design
-    - After cad_modify_model: render to verify changes
-    - Before slicer_slice_model: render to confirm final design
-    
-    Args:
-        model_id: The model identifier
-        view: View angle (iso, top, bottom, left, right, front, back)
-        width: Image width in pixels (default: 800)
-        height: Image height in pixels (default: 600)
-        
-    Returns:
-        dict: Contains model_id and png_path, or error information
-        
-    Example:
-        >>> cad_render_preview("abc123", view="iso", width=1024, height=768)
-        {"model_id": "abc123", "png_path": "/path/to/preview_12345.png"}
-    """
-    try:
-        if not OPENSCAD_BIN:
-            return {
-                "error": "OPENSCAD_BIN not configured",
-                "details": "Set the OPENSCAD_BIN environment variable to the OpenSCAD executable path"
-            }
-        
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        scad_path = mdir / "main.scad"
-        
-        if not scad_path.exists():
-            return {
-                "error": "Model not found",
-                "details": f"No main.scad found for model {model_id}"
-            }
-        
-        # Generate unique preview filename
-        timestamp = int(time.time() * 1000)
-        png_filename = f"preview_{timestamp}.png"
-        png_path = mdir / png_filename
-        
-        # Build OpenSCAD command
-        cmd = [
-            OPENSCAD_BIN,
-            "-o", str(png_path),
-            f"--imgsize={width},{height}",
-            "--render",
-            str(scad_path)
-        ]
-        
-        # Add view parameter if supported
-        # Note: OpenSCAD camera positioning varies by version
-        # This is a simplified approach
-        if view != "iso":
-            # You could add camera parameters here
-            # For now, we'll just note the view in logs
-            logger.info(f"Requested view: {view} (using default rendering)")
-        
-        # Execute OpenSCAD
-        result = run_command_safe(cmd, timeout=120, cwd=mdir)
-        
-        if not result["success"]:
-            return {
-                "error": "OpenSCAD rendering failed",
-                "details": result["stderr"],
-                "stdout": result["stdout"]
-            }
-        
-        if not png_path.exists():
-            return {
-                "error": "Preview file not generated",
-                "details": "OpenSCAD completed but no PNG was created"
-            }
-        
-        logger.info(f"Rendered preview for model {model_id}: {png_path}")
-        
-        return {
-            "model_id": model_id,
-            "png_path": str(png_path.resolve())
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error rendering preview: {e}", exc_info=True)
-        return {
-            "error": "Failed to render preview",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def cad_list_previews(model_id: str) -> Dict[str, Any]:
-    """
-    List available preview images for a model.
-    
-    Use this to see all generated previews and their modification times.
-    Helpful for reviewing the design iteration history.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        dict: Contains model_id and list of previews with file and mtime
-        
-    Example:
-        >>> cad_list_previews("abc123")
-        {
-            "model_id": "abc123",
-            "previews": [
-                {"file": "preview_12345.png", "mtime": 1234567890.0},
-                {"file": "preview_12346.png", "mtime": 1234567900.0}
-            ]
-        }
-    """
-    try:
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        
-        if not mdir.exists():
-            return {
-                "error": "Model not found",
-                "details": f"Model directory does not exist for {model_id}"
-            }
-        
-        # Find all preview PNG files
-        previews = []
-        for png_file in sorted(mdir.glob("preview_*.png")):
-            previews.append({
-                "file": png_file.name,
-                "mtime": png_file.stat().st_mtime
-            })
-        
-        return {
-            "model_id": model_id,
-            "previews": previews
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error listing previews: {e}", exc_info=True)
-        return {
-            "error": "Failed to list previews",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def slicer_slice_model(
-    model_id: str,
-    profile: str,
-    extra_args: Optional[Dict[str, str]] = None
-) -> Dict[str, Any]:
-    """
-    Slice a model using the configured slicer CLI to generate G-code.
-    
-    This is the critical step between design and printing. After finalizing
-    your model design and previews, use this to generate the G-code that
-    will be sent to the printer.
-    
-    Workflow:
-    - After final cad_render_preview confirms design is ready
-    - Use this to generate G-code with appropriate slicer profile
-    - Then use printer_upload_and_start to begin printing
-    
-    Args:
-        model_id: The model identifier
-        profile: Path to slicer configuration/profile file
-        extra_args: Optional dict of additional slicer arguments (e.g., {"layer-height": "0.2"})
-        
-    Returns:
-        dict: Contains model_id, gcode_path, slicer_stdout, and slicer_stderr
-        
-    Example:
-        >>> slicer_slice_model("abc123", "/path/to/profile.ini", {"layer-height": "0.2"})
-        {
-            "model_id": "abc123",
-            "gcode_path": "/path/to/model.gcode",
-            "slicer_stdout": "...",
-            "slicer_stderr": ""
-        }
-    """
-    try:
-        if not SLICER_BIN:
-            return {
-                "error": "SLICER_BIN not configured",
-                "details": "Set the SLICER_BIN environment variable to the slicer executable path"
-            }
-        
-        if not OPENSCAD_BIN:
-            return {
-                "error": "OPENSCAD_BIN not configured",
-                "details": "OpenSCAD is required to generate STL from SCAD file"
-            }
-        
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        scad_path = mdir / "main.scad"
-        
-        if not scad_path.exists():
-            return {
-                "error": "Model not found",
-                "details": f"No main.scad found for model {model_id}"
-            }
-        
-        # Step 1: Generate STL from OpenSCAD
-        stl_path = mdir / "model.stl"
-        stl_cmd = [
-            OPENSCAD_BIN,
-            "-o", str(stl_path),
-            str(scad_path)
-        ]
-        
-        logger.info(f"Generating STL for model {model_id}")
-        stl_result = run_command_safe(stl_cmd, timeout=180, cwd=mdir)
-        
-        if not stl_result["success"]:
-            return {
-                "error": "STL generation failed",
-                "details": stl_result["stderr"],
-                "stdout": stl_result["stdout"]
-            }
-        
-        if not stl_path.exists():
-            return {
-                "error": "STL file not generated",
-                "details": "OpenSCAD completed but no STL was created"
-            }
-        
-        # Step 2: Slice STL to G-code
-        gcode_path = mdir / "model.gcode"
-        slice_cmd = [
-            SLICER_BIN,
-            "--load", profile,
-            "--output", str(gcode_path),
-            str(stl_path)
-        ]
-        
-        # Add extra arguments if provided
-        if extra_args:
-            for key, value in extra_args.items():
-                slice_cmd.extend([f"--{key}", value])
-        
-        logger.info(f"Slicing model {model_id} with profile {profile}")
-        slice_result = run_command_safe(slice_cmd, timeout=300, cwd=mdir)
-        
-        if not slice_result["success"]:
-            return {
-                "error": "Slicing failed",
-                "details": slice_result["stderr"],
-                "stdout": slice_result["stdout"]
-            }
-        
-        if not gcode_path.exists():
-            return {
-                "error": "G-code not generated",
-                "details": "Slicer completed but no G-code was created"
-            }
-        
-        logger.info(f"Sliced model {model_id}: {gcode_path}")
-        
-        return {
-            "model_id": model_id,
-            "gcode_path": str(gcode_path.resolve()),
-            "slicer_stdout": slice_result["stdout"],
-            "slicer_stderr": slice_result["stderr"]
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error slicing model: {e}", exc_info=True)
-        return {
-            "error": "Failed to slice model",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def printer_status() -> Dict[str, Any]:
-    """
-    Get the current status of the 3D printer via OctoPrint.
-    
-    Use this to check:
-    - Current job progress
-    - Printer state (operational, printing, paused, etc.)
-    - Temperature information
-    - Print time estimates
-    
-    Returns standard OctoPrint job and printer status.
-    
-    Returns:
-        dict: Contains job and printer status information from OctoPrint
-        
-    Example:
-        >>> printer_status()
-        {
-            "job": {"state": "Printing", "progress": {"completion": 45.2}},
-            "printer": {"state": {"text": "Printing"}, "temperature": {...}}
-        }
-    """
-    try:
-        if not OCTOPRINT_API_KEY:
-            return {
-                "error": "OCTOPRINT_API_KEY not configured",
-                "details": "Set the OCTOPRINT_API_KEY environment variable"
-            }
-        
-        job_status = octo_get("/api/job")
-        printer_status_data = octo_get("/api/printer")
-        
-        return {
-            "job": job_status,
-            "printer": printer_status_data
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting printer status: {e}", exc_info=True)
-        return {
-            "error": "Failed to get printer status",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def printer_upload_and_start(model_id: str) -> Dict[str, Any]:
-    """
-    Upload G-code to OctoPrint and start the print job.
-    
-    This is the final step in the workflow. After slicing your model,
-    use this to upload the G-code to your 3D printer and start printing.
-    
-    Workflow:
-    1. Design complete and validated with previews
-    2. G-code generated with slicer_slice_model
-    3. Use this tool to upload and start printing
-    4. Monitor with printer_status
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        dict: Contains upload_result and start_result from OctoPrint
-        
-    Example:
-        >>> printer_upload_and_start("abc123")
-        {
-            "model_id": "abc123",
-            "upload_result": {...},
-            "start_result": {...}
-        }
-    """
-    try:
-        if not OCTOPRINT_API_KEY:
-            return {
-                "error": "OCTOPRINT_API_KEY not configured",
-                "details": "Set the OCTOPRINT_API_KEY environment variable"
-            }
-        
-        sanitized_id = sanitize_model_id(model_id)
-        mdir = model_dir(sanitized_id)
-        gcode_path = mdir / "model.gcode"
-        
-        if not gcode_path.exists():
-            return {
-                "error": "G-code not found",
-                "details": f"No model.gcode found for model {model_id}. Run slicer_slice_model first."
-            }
-        
-        # Upload file to OctoPrint
-        filename = f"{model_id}_model.gcode"
-        
-        with open(gcode_path, 'rb') as f:
-            files = {'file': (filename, f, 'application/octet-stream')}
-            upload_result = octo_post("/api/files/local", files=files)
-        
-        if "error" in upload_result:
-            return {
-                "model_id": model_id,
-                "upload_result": upload_result,
-                "error": "Upload failed"
-            }
-        
-        # Start the print job
-        start_payload = {
-            "command": "select",
-            "print": True
-        }
-        
-        # The file path in OctoPrint
-        file_path = f"local/{filename}"
-        start_result = octo_post(f"/api/files/{file_path}", payload=start_payload)
-        
-        logger.info(f"Uploaded and started print for model {model_id}")
-        
-        return {
-            "model_id": model_id,
-            "upload_result": upload_result,
-            "start_result": start_result
-        }
-        
-    except ValueError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        logger.error(f"Error uploading and starting print: {e}", exc_info=True)
-        return {
-            "error": "Failed to upload and start print",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def printer_send_gcode_line(gcode: str) -> Dict[str, Any]:
-    """
-    Send a single G-code command to the printer.
-    
-    ⚠️  WARNING: This can move the printer or change temperatures!
-    Use with caution. Only send G-code commands if you understand their effects.
-    
-    Common uses:
-    - Home axes: G28
-    - Set temperature: M104 S200 (hotend), M140 S60 (bed)
-    - Move: G1 X10 Y10 Z5 F3000
-    - Emergency stop: M112
-    
-    Args:
-        gcode: The G-code command to send (e.g., "G28", "M104 S200")
-        
-    Returns:
-        dict: Contains sent command and result from OctoPrint
-        
-    Example:
-        >>> printer_send_gcode_line("G28")
-        {"sent": "G28", "result": {...}}
-    """
-    try:
-        if not OCTOPRINT_API_KEY:
-            return {
-                "error": "OCTOPRINT_API_KEY not configured",
-                "details": "Set the OCTOPRINT_API_KEY environment variable"
-            }
-        
-        result = octo_post("/api/printer/command", payload={"commands": [gcode]})
-        
-        logger.warning(f"Sent G-code command: {gcode}")
-        
-        return {
-            "sent": gcode,
-            "result": result
-        }
-        
-    except Exception as e:
-        logger.error(f"Error sending G-code: {e}", exc_info=True)
-        return {
-            "error": "Failed to send G-code",
-            "details": str(e)
-        }
-
-
-@mcp.tool()
-def workspace_list_models() -> Dict[str, Any]:
-    """
-    List all models in the workspace.
-    
-    Use this to:
-    - See all available models
-    - Check which models have been sliced
-    - Find models with previews
-    - Manage your workspace
-    
-    Returns:
-        dict: Contains list of models with their status
-        
-    Example:
-        >>> workspace_list_models()
-        {
-            "models": [
-                {
-                    "model_id": "abc123",
-                    "scad_exists": True,
-                    "gcode_exists": True,
-                    "previews": 3
-                }
-            ]
-        }
-    """
-    try:
-        workspace = ensure_workspace()
-        models_base = workspace / "models"
-        
-        if not models_base.exists():
-            return {"models": []}
-        
-        models = []
-        for model_path in sorted(models_base.iterdir()):
-            if not model_path.is_dir():
-                continue
-            
-            model_id = model_path.name
-            
-            # Check for main.scad
-            scad_exists = (model_path / "main.scad").exists()
-            
-            # Check for gcode
-            gcode_exists = (model_path / "model.gcode").exists()
-            
-            # Count previews
-            preview_count = len(list(model_path.glob("preview_*.png")))
-            
-            models.append({
-                "model_id": model_id,
-                "scad_exists": scad_exists,
-                "gcode_exists": gcode_exists,
-                "previews": preview_count
-            })
-        
-        return {"models": models}
-        
-    except Exception as e:
-        logger.error(f"Error listing models: {e}", exc_info=True)
-        return {
-            "error": "Failed to list models",
-            "details": str(e)
-        }
-
-
-# ============================================================================
-# STARTUP LOGIC
+# STARTUP CHECKS
 # ============================================================================
 
 def startup_checks():
     """
     Perform startup checks and log configuration status.
     """
+    settings = get_settings()
+    
     logger.info("=" * 80)
-    logger.info("CadSlicerPrinter MCP Server Starting")
+    logger.info("CadSlicerPrinter MCP Server Starting (Redesigned)")
     logger.info("=" * 80)
     
     # Ensure workspace exists
     try:
-        workspace = ensure_workspace()
-        logger.info(f"✓ Workspace directory: {workspace}")
+        settings.ensure_workspace()
+        logger.info(f"✓ Workspace directory: {settings.workspace_dir}")
     except Exception as e:
         logger.error(f"✗ Failed to create workspace directory: {e}")
     
-    # Check OpenSCAD
-    if OPENSCAD_BIN:
-        logger.info(f"✓ OpenSCAD binary: {OPENSCAD_BIN}")
-    else:
-        logger.warning("⚠ OPENSCAD_BIN not configured - CAD features will not work")
+    # Validate configuration
+    validation_messages = settings.validate()
+    if validation_messages:
+        logger.warning("Configuration warnings:")
+        for msg in validation_messages:
+            logger.warning(f"  ⚠ {msg}")
     
-    # Check Slicer
-    if SLICER_BIN:
-        logger.info(f"✓ Slicer binary: {SLICER_BIN}")
-    else:
-        logger.warning("⚠ SLICER_BIN not configured - slicing features will not work")
-    
-    # Check OctoPrint
-    if OCTOPRINT_URL:
-        logger.info(f"✓ OctoPrint URL: {OCTOPRINT_URL}")
-    else:
-        logger.warning("⚠ OCTOPRINT_URL not configured")
-    
-    if OCTOPRINT_API_KEY:
-        logger.info(f"✓ OctoPrint API key: {OCTOPRINT_API_KEY[:8]}...")
-    else:
-        logger.warning("⚠ OCTOPRINT_API_KEY not configured - printer features will not work")
+    # Log configuration
+    logger.info(f"✓ MCP Transport: {settings.mcp_transport}")
+    if settings.openscad_bin:
+        logger.info(f"✓ OpenSCAD binary: {settings.openscad_bin}")
+    if settings.slicer_bin:
+        logger.info(f"✓ Slicer binary: {settings.slicer_bin}")
+    if settings.octoprint_url:
+        logger.info(f"✓ OctoPrint URL: {settings.octoprint_url}")
+    if settings.octoprint_api_key:
+        logger.info(f"✓ OctoPrint API key: {settings.octoprint_api_key[:8]}...")
     
     logger.info("=" * 80)
     logger.info("Server ready. Available tools:")
     logger.info("  CAD Design:")
     logger.info("    - cad_create_model")
-    logger.info("    - cad_get_code (NEW: retrieve model source code)")
-    logger.info("    - cad_update_parameters (NEW: modify parameters for iteration)")
+    logger.info("    - cad_get_code")
+    logger.info("    - cad_update_parameters")
     logger.info("    - cad_modify_model")
     logger.info("    - cad_render_preview")
     logger.info("    - cad_list_previews")
@@ -1258,6 +169,8 @@ def parse_arguments():
     Returns:
         argparse.Namespace: Parsed arguments
     """
+    settings = get_settings()
+    
     parser = argparse.ArgumentParser(
         description="CadSlicerPrinter MCP Server - 3D model design, slicing, and printing"
     )
@@ -1265,7 +178,7 @@ def parse_arguments():
         "--transport",
         type=str,
         choices=["stdio", "sse", "streamable-http"],
-        default=MCP_TRANSPORT,
+        default=settings.mcp_transport,
         help="MCP transport protocol (default: stdio for OpenAI compatibility)"
     )
     parser.add_argument(
@@ -1276,14 +189,14 @@ def parse_arguments():
     parser.add_argument(
         "--port",
         type=int,
-        default=8080,
-        help="Port for web control panel (default: 8080)"
+        default=settings.web_port,
+        help=f"Port for web control panel (default: {settings.web_port})"
     )
     parser.add_argument(
         "--host",
         type=str,
-        default="127.0.0.1",
-        help="Host to bind web server to (default: 127.0.0.1 for localhost only)"
+        default=settings.web_host,
+        help=f"Host to bind web server to (default: {settings.web_host} for localhost only)"
     )
     return parser.parse_args()
 
@@ -1292,7 +205,14 @@ def parse_arguments():
 # WEB API ENDPOINTS (for frontend control panel)
 # ============================================================================
 
-# Web API endpoints that wrap MCP tools
+# Create services for web API
+_cad_service = CADService()
+_slicer_service = SlicerService()
+_printer_service = PrinterService()
+_workspace_service = WorkspaceService()
+
+
+# Web API endpoints that wrap service methods
 async def api_health(request):
     """Health check endpoint"""
     return JSONResponse({"status": "ok", "server": "CadSlicerPrinter"})
@@ -1301,14 +221,14 @@ async def api_health(request):
 async def api_cad_create(request):
     """Create a new CAD model"""
     data = await request.json()
-    result = cad_create_model(description=data.get("description", ""))
+    result = _cad_service.create_model(description=data.get("description", ""))
     return JSONResponse(result)
 
 
 async def api_cad_modify(request):
     """Modify an existing CAD model"""
     data = await request.json()
-    result = cad_modify_model(
+    result = _cad_service.add_modification_note(
         model_id=data.get("model_id", ""),
         instruction=data.get("instruction", "")
     )
@@ -1318,14 +238,14 @@ async def api_cad_modify(request):
 async def api_cad_get_code(request):
     """Get the OpenSCAD code for a model"""
     data = await request.json()
-    result = cad_get_code(model_id=data.get("model_id", ""))
+    result = _cad_service.get_code(model_id=data.get("model_id", ""))
     return JSONResponse(result)
 
 
 async def api_cad_update_parameters(request):
     """Update parameters in a CAD model"""
     data = await request.json()
-    result = cad_update_parameters(
+    result = _cad_service.update_parameters(
         model_id=data.get("model_id", ""),
         parameters=data.get("parameters", {})
     )
@@ -1335,7 +255,7 @@ async def api_cad_update_parameters(request):
 async def api_cad_preview(request):
     """Render a preview of a CAD model"""
     data = await request.json()
-    result = cad_render_preview(
+    result = await _cad_service.render_preview(
         model_id=data.get("model_id", ""),
         view=data.get("view", "iso"),
         width=data.get("width", 800),
@@ -1347,14 +267,14 @@ async def api_cad_preview(request):
 async def api_cad_list_previews(request):
     """List previews for a model"""
     data = await request.json()
-    result = cad_list_previews(model_id=data.get("model_id", ""))
+    result = _cad_service.list_previews(model_id=data.get("model_id", ""))
     return JSONResponse(result)
 
 
 async def api_slicer_slice(request):
     """Slice a model"""
     data = await request.json()
-    result = slicer_slice_model(
+    result = await _slicer_service.slice_model(
         model_id=data.get("model_id", ""),
         profile=data.get("profile", ""),
         extra_args=data.get("extra_args")
@@ -1364,27 +284,27 @@ async def api_slicer_slice(request):
 
 async def api_printer_status(_request):
     """Get printer status"""
-    result = printer_status()
+    result = await _printer_service.get_status()
     return JSONResponse(result)
 
 
 async def api_printer_upload_and_start(request):
     """Upload and start print"""
     data = await request.json()
-    result = printer_upload_and_start(model_id=data.get("model_id", ""))
+    result = await _printer_service.upload_and_start(model_id=data.get("model_id", ""))
     return JSONResponse(result)
 
 
 async def api_printer_send_gcode(request):
     """Send G-code command"""
     data = await request.json()
-    result = printer_send_gcode_line(gcode=data.get("gcode", ""))
+    result = await _printer_service.send_gcode(gcode=data.get("gcode", ""))
     return JSONResponse(result)
 
 
 async def api_workspace_models(_request):
     """List all workspace models"""
-    result = workspace_list_models()
+    result = _workspace_service.list_models()
     return JSONResponse(result)
 
 
@@ -1449,7 +369,6 @@ if __name__ == "__main__":
     startup_checks()
     
     # Check if we should run in web mode (with frontend)
-    # Web mode is enabled when using --web flag or streamable-http transport
     if args.web or args.transport == "streamable-http":
         logger.info("Starting server in web mode with control panel")
         run_web_server(host=args.host, port=args.port)
@@ -1457,5 +376,6 @@ if __name__ == "__main__":
         # Log the transport being used
         logger.info(f"Starting MCP server with transport: {args.transport}")
         
-        # Run the server with the selected transport
+        # Create and run the MCP server
+        mcp = create_mcp_server()
         mcp.run(transport=args.transport)
