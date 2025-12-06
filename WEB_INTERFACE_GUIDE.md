@@ -33,11 +33,21 @@ cd src
 python server.py --transport streamable-http
 ```
 
-#### Custom Port
-By default, the web interface runs on port 8080. You can specify a different port:
+#### Custom Port and Host
+By default, the web interface runs on `127.0.0.1:8080` (localhost only). You can specify a different port and host:
+
 ```bash
+# Custom port (still localhost only)
 python server.py --web --port 9000
+
+# Allow access from all network interfaces (useful for remote access)
+python server.py --web --host 0.0.0.0 --port 8080
+
+# Allow access from specific network interface
+python server.py --web --host 192.168.1.100 --port 8080
 ```
+
+**Security Note:** Using `--host 0.0.0.0` exposes the web interface to all network interfaces. Only use this if you understand the security implications and have appropriate firewall rules in place.
 
 ### Accessing the Web Interface
 

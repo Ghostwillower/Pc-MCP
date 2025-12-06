@@ -30,7 +30,7 @@ async function callAPI(endpoint, method = 'POST', body = null) {
             }
         };
         
-        if (body && method !== 'GET') {
+        if (body && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
             options.body = JSON.stringify(body);
         }
         

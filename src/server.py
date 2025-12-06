@@ -36,6 +36,18 @@ from typing import Optional, Dict, Any, List
 import requests
 from mcp.server.fastmcp import FastMCP
 
+# Optional web server imports - only needed for --web mode
+try:
+    from starlette.applications import Starlette
+    from starlette.routing import Route, Mount
+    from starlette.responses import JSONResponse, FileResponse
+    from starlette.staticfiles import StaticFiles
+    import uvicorn
+    WEB_DEPENDENCIES_AVAILABLE = True
+except ImportError as e:
+    WEB_DEPENDENCIES_AVAILABLE = False
+    _MISSING_WEB_DEP = str(e)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -1080,20 +1092,18 @@ def parse_arguments():
         default=8080,
         help="Port for web control panel (default: 8080)"
     )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind web server to (default: 127.0.0.1 for localhost only)"
+    )
     return parser.parse_args()
 
 
 # ============================================================================
 # WEB API ENDPOINTS (for frontend control panel)
 # ============================================================================
-
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse, FileResponse
-from starlette.staticfiles import StaticFiles
-import asyncio
-import threading
-
 
 # Web API endpoints that wrap MCP tools
 async def api_health(request):
@@ -1203,17 +1213,25 @@ def create_web_app():
     return Starlette(routes=routes)
 
 
-def run_web_server(port=8080):
+def run_web_server(host="127.0.0.1", port=8080):
     """Run the web server with both MCP and web API"""
-    import uvicorn
+    if not WEB_DEPENDENCIES_AVAILABLE:
+        logger.error("Web server dependencies not available!")
+        logger.error(f"Missing dependency: {_MISSING_WEB_DEP}")
+        logger.error("Install with: pip install uvicorn starlette")
+        sys.exit(1)
+    
     app = create_web_app()
     
     logger.info("=" * 80)
-    logger.info(f"Web Control Panel available at: http://localhost:{port}")
-    logger.info(f"MCP endpoints available at: http://localhost:{port}/api/...")
+    logger.info(f"Web Control Panel available at: http://{host}:{port}")
+    logger.info(f"MCP endpoints available at: http://{host}:{port}/api/...")
+    if host == "0.0.0.0":
+        logger.warning("⚠️  WARNING: Server is exposed to all network interfaces!")
+        logger.warning("⚠️  Consider using --host 127.0.0.1 for localhost-only access")
     logger.info("=" * 80)
     
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 # ============================================================================
@@ -1228,7 +1246,7 @@ if __name__ == "__main__":
     # Web mode is enabled when using --web flag or streamable-http transport
     if args.web or args.transport == "streamable-http":
         logger.info("Starting server in web mode with control panel")
-        run_web_server(port=args.port)
+        run_web_server(host=args.host, port=args.port)
     else:
         # Log the transport being used
         logger.info(f"Starting MCP server with transport: {args.transport}")
