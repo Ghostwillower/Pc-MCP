@@ -3,10 +3,8 @@
 import logging
 from typing import Optional, Dict, Any
 from authlib.integrations.starlette_client import OAuth
-from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse
-from itsdangerous import URLSafeTimedSerializer
 
 from config import get_settings
 

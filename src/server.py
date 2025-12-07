@@ -315,7 +315,12 @@ def check_auth(request):
 
 # Web API endpoints that wrap service methods
 async def api_health(request):
-    """Health check endpoint"""
+    """
+    Health check endpoint - always public for monitoring and load balancers.
+    
+    This endpoint intentionally does not require authentication to allow
+    external monitoring tools and load balancers to check service status.
+    """
     return JSONResponse({"status": "ok", "server": "CadSlicerPrinter"})
 
 
