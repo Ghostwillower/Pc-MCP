@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installation script for CadSlicerPrinter MCP Server auto-start
+# Installation script for CadSlicerPrinter MCP Server auto-start with Cloudflared Tunnel
 
 set -e
 
@@ -28,7 +28,7 @@ echo "Installing service for user: $ACTUAL_USER"
 REPO_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Repository path: $REPO_PATH"
 
-# Copy service file to systemd directory
+# Install main service
 SERVICE_FILE="$REPO_PATH/cadslicerprinter.service"
 SYSTEMD_DIR="/etc/systemd/system"
 
@@ -47,17 +47,42 @@ sed -e "s|WorkingDirectory=/home/%i/Pc-MCP/src|WorkingDirectory=$REPO_PATH/src|g
     -e "s|/home/%i/Pc-MCP/src/server.py|$REPO_PATH/src/server.py|g" \
     "$SERVICE_FILE" > "$TEMP_SERVICE"
 
-echo "Installing systemd service..."
+echo "Installing CadSlicerPrinter systemd service..."
 cp "$TEMP_SERVICE" "$SYSTEMD_DIR/cadslicerprinter@.service"
 rm "$TEMP_SERVICE"
+
+# Install cloudflared tunnel service (optional)
+CLOUDFLARED_SERVICE_FILE="$REPO_PATH/cloudflared-pcmcp.service"
+if [ -f "$CLOUDFLARED_SERVICE_FILE" ]; then
+    TEMP_CLOUDFLARED_SERVICE="/tmp/cloudflared-pcmcp@.service"
+    
+    # Replace path placeholders but keep User=%i intact
+    sed -e "s|WorkingDirectory=/home/%i/Pc-MCP|WorkingDirectory=$REPO_PATH|g" \
+        "$CLOUDFLARED_SERVICE_FILE" > "$TEMP_CLOUDFLARED_SERVICE"
+    
+    echo "Installing Cloudflared tunnel systemd service..."
+    cp "$TEMP_CLOUDFLARED_SERVICE" "$SYSTEMD_DIR/cloudflared-pcmcp@.service"
+    rm "$TEMP_CLOUDFLARED_SERVICE"
+    
+    CLOUDFLARED_INSTALLED=true
+else
+    echo "Cloudflared service file not found, skipping..."
+    CLOUDFLARED_INSTALLED=false
+fi
 
 # Reload systemd
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
 # Enable and start the service
-echo "Enabling service for user $ACTUAL_USER..."
+echo "Enabling CadSlicerPrinter service for user $ACTUAL_USER..."
 systemctl enable "cadslicerprinter@$ACTUAL_USER.service"
+
+# Enable cloudflared if installed
+if [ "$CLOUDFLARED_INSTALLED" = true ]; then
+    echo "Enabling Cloudflared tunnel service for user $ACTUAL_USER..."
+    systemctl enable "cloudflared-pcmcp@$ACTUAL_USER.service"
+fi
 
 echo ""
 echo "=========================================="

@@ -1,6 +1,7 @@
 [Unit]
 Description=CadSlicerPrinter MCP Server
 After=network.target
+Wants=cloudflared-pcmcp.service
 
 [Service]
 Type=simple
