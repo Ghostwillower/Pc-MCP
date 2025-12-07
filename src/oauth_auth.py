@@ -1,7 +1,7 @@
 """OAuth authentication module for the MCP server."""
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional
 from functools import wraps
 from authlib.integrations.starlette_client import OAuth
 from starlette.requests import Request
