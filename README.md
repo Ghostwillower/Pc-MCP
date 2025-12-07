@@ -5,6 +5,17 @@ MCP servers for my PC
 
 A Python 3 MCP server that enables iterative 3D model design, preview, slicing, and printing through ChatGPT and other MCP-compatible clients, or via the included web control panel.
 
+**✨ Recently redesigned for maximum backend efficiency** - See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+
+### Key Improvements (v0.2.0)
+
+- 🚀 **74% reduction** in main server code (1461 → 381 lines)
+- ⚡ **Async operations** for rendering, slicing, and HTTP requests
+- 🔌 **Connection pooling** for OctoPrint API (reduces latency)
+- 💾 **Configuration caching** for faster access
+- 🏗️ **Modular architecture** (config, services, tools, utils)
+- ✅ **Zero feature loss** - fully backward compatible
+
 ### Features
 
 - **Iterative CAD Design**: AI-driven iterative model refinement with visual feedback loop

@@ -7,6 +7,10 @@ This demonstrates the complete iterative design workflow:
 2. Get the code to see current parameters
 3. Update parameters based on design requirements
 4. Verify parameters were updated correctly
+
+NOTE: This test uses compatibility wrappers for the new modular architecture.
+The actual MCP tools are defined in src/tools/ and use the services from src/services/.
+For new code, import directly from services rather than using these wrappers.
 """
 
 import sys
@@ -17,12 +21,26 @@ from pathlib import Path
 src_path = Path(__file__).parent / 'src'
 sys.path.insert(0, str(src_path))
 
-from server import (
-    cad_create_model,
-    cad_get_code,
-    cad_update_parameters,
-    cad_modify_model,
-)
+# Import from new modular architecture
+from services import CADService
+
+# Create service instance
+_cad_service = CADService()
+
+# Compatibility wrappers for existing test code
+# NOTE: These map old function names to new service methods
+def cad_create_model(description: str):
+    return _cad_service.create_model(description)
+
+def cad_get_code(model_id: str):
+    return _cad_service.get_code(model_id)
+
+def cad_update_parameters(model_id: str, parameters: dict):
+    return _cad_service.update_parameters(model_id, parameters)
+
+def cad_modify_model(model_id: str, instruction: str):
+    """Note: This wraps add_modification_note for backward compatibility."""
+    return _cad_service.add_modification_note(model_id, instruction)
 
 
 def test_iterative_workflow():

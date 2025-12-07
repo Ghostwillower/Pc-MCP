@@ -11,22 +11,59 @@ The workflow simulates:
 3. Code inspection to understand available parameters
 4. Parameter updates based on design comparison
 5. Iteration until design matches target
+
+NOTE: This example uses compatibility wrappers for demonstration purposes.
+The actual MCP tools are defined in src/tools/ and use the services from src/services/.
+When using the MCP server, tools are called via the MCP protocol, not direct function calls.
 """
 
 import os
 import sys
+import asyncio
 sys.path.insert(0, 'src')
 
-from server import (
-    cad_create_model,
-    cad_get_code,
-    cad_update_parameters,
-    cad_render_preview,
-    cad_list_previews,
-    slicer_slice_model,
-    workspace_list_models,
-    printer_status,
-)
+# Import from new modular architecture
+from services import CADService, SlicerService, PrinterService, WorkspaceService
+
+# Create service instances
+_cad_service = CADService()
+_slicer_service = SlicerService()
+_printer_service = PrinterService()
+_workspace_service = WorkspaceService()
+
+# Compatibility wrappers for example code
+# NOTE: Actual MCP usage is via protocol, not direct function calls
+def cad_create_model(description: str):
+    return _cad_service.create_model(description)
+
+def cad_get_code(model_id: str):
+    return _cad_service.get_code(model_id)
+
+def cad_update_parameters(model_id: str, parameters: dict):
+    return _cad_service.update_parameters(model_id, parameters)
+
+# Note: These async wrappers maintain sync signatures for this example.
+# Real MCP tools can use async directly.
+def cad_render_preview(model_id: str, view: str = "iso", width: int = 800, height: int = 600):
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_cad_service.render_preview(model_id, view, width, height))
+
+def cad_list_previews(model_id: str):
+    return _cad_service.list_previews(model_id)
+
+def slicer_slice_model(model_id: str, profile: str, extra_args=None):
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_slicer_service.slice_model(model_id, profile, extra_args))
+
+def workspace_list_models():
+    return _workspace_service.list_models()
+
+def printer_status():
+    """Sync wrapper for demo - real MCP tools use async version."""
+    import asyncio
+    return asyncio.run(_printer_service.get_status())
 
 
 def main():
