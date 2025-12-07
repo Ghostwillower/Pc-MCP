@@ -46,7 +46,14 @@ from mcp.server.fastmcp import FastMCP
 from config import get_settings
 
 # Import services
-from services import CADService, SlicerService, PrinterService, WorkspaceService
+from services import (
+    CADService,
+    SlicerService,
+    PrinterService,
+    WorkspaceService,
+    FilesystemService,
+    TerminalService,
+)
 
 # Import tool registration functions
 from tools import (
@@ -54,6 +61,8 @@ from tools import (
     register_slicer_tools,
     register_printer_tools,
     register_workspace_tools,
+    register_filesystem_tools,
+    register_terminal_tools,
 )
 
 # Optional web server imports - only needed for --web mode
@@ -140,12 +149,16 @@ def create_mcp_server() -> FastMCP:
     slicer_service = SlicerService()
     _printer_service = PrinterService()  # Store for cleanup
     workspace_service = WorkspaceService()
+    filesystem_service = FilesystemService()
+    terminal_service = TerminalService()
     
     # Register all tools
     register_cad_tools(mcp, cad_service)
     register_slicer_tools(mcp, slicer_service)
     register_printer_tools(mcp, _printer_service)
     register_workspace_tools(mcp, workspace_service)
+    register_filesystem_tools(mcp, filesystem_service)
+    register_terminal_tools(mcp, terminal_service)
     
     return mcp
 
@@ -206,6 +219,17 @@ def startup_checks():
     logger.info("    - printer_send_gcode_line")
     logger.info("  Workspace:")
     logger.info("    - workspace_list_models")
+    logger.info("  Filesystem:")
+    logger.info("    - filesystem_read_file")
+    logger.info("    - filesystem_write_file")
+    logger.info("    - filesystem_list_directory")
+    logger.info("    - filesystem_create_directory")
+    logger.info("    - filesystem_delete_path")
+    logger.info("    - filesystem_get_info")
+    logger.info("  Terminal:")
+    logger.info("    - terminal_execute")
+    logger.info("    - terminal_get_cwd")
+    logger.info("    - terminal_get_env")
     logger.info("=" * 80)
 
 

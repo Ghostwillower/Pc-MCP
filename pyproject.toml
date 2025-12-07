@@ -1,7 +1,7 @@
 [project]
 name = "cad-slicer-printer-mcp"
-version = "0.2.0"
-description = "MCP server for iterative 3D model design, slicing, and printing - Redesigned for maximum efficiency"
+version = "0.2.1"
+description = "MCP server for iterative 3D model design, slicing, printing, filesystem operations, and terminal commands"
 requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
