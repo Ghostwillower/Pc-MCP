@@ -7,6 +7,7 @@ MCP servers for my PC
 - **[OpenAI Integration](OPENAI_INTEGRATION.md)** - Quick guide for integrating this server with OpenAI's MCP connectors
 - **[Architecture](ARCHITECTURE.md)** - Server architecture and design principles
 - **[Web Interface Guide](WEB_INTERFACE_GUIDE.md)** - Web control panel and auto-start setup
+- **[Filesystem and Terminal Tools](FILESYSTEM_TERMINAL_GUIDE.md)** - Guide to filesystem operations and terminal command execution
 
 ## CadSlicerPrinter MCP Server
 
@@ -33,6 +34,15 @@ A Python 3 MCP server that enables iterative 3D model design, preview, slicing, 
 - **Preview Rendering**: Visualize models at any stage of the design process
 - **Model Slicing**: Generate G-code using industry-standard slicers
 - **3D Printer Control**: Upload and start print jobs via OctoPrint
+- **Filesystem Operations**: View and modify files on your computer
+  - Read and write files with security controls
+  - List directory contents
+  - Create and delete files/directories
+  - Get file information and metadata
+- **Terminal Commands**: Execute shell commands safely without admin privileges
+  - Run development tools, scripts, and utilities
+  - Build and test code
+  - Security controls block privileged operations (sudo, systemctl, etc.)
 - **Web Control Panel**: Minimalist web interface for controlling all functions
 - **Auto-Start Support**: Run as a system service on boot without GUI
 - **OpenAI Compatible**: Uses stdio transport for seamless integration with OpenAI's MCP connectors
