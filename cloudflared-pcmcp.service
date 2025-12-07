@@ -7,7 +7,9 @@ Before=cadslicerprinter@.service
 Type=simple
 User=%i
 WorkingDirectory=/home/%i/Pc-MCP
-# OAuth environment variables for Cloudflare Access
+# Cloudflare Access OAuth environment variables (for tunnel-level authentication)
+# These are separate from the application OAuth and configure Cloudflare Access policies
+# See: https://developers.cloudflare.com/cloudflare-one/identity/
 Environment="TUNNEL_OAUTH_CLIENT_ID="
 Environment="TUNNEL_OAUTH_CLIENT_SECRET="
 # Run cloudflared tunnel with OAuth support

@@ -89,7 +89,7 @@ class Settings:
             if not self.oauth_token_url:
                 messages.append("OAUTH_TOKEN_URL is required when OAuth is enabled")
             if self.oauth_secret_key == "change-me-in-production":
-                messages.append("OAUTH_SECRET_KEY should be changed from default value")
+                messages.append("WARNING: OAUTH_SECRET_KEY must be changed from default for security!")
         
         return messages
     

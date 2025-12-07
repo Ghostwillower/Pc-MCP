@@ -13,6 +13,7 @@ Environment="SLICER_BIN=/usr/bin/prusa-slicer"
 Environment="OCTOPRINT_URL=http://localhost:5000"
 Environment="OCTOPRINT_API_KEY="
 # OAuth configuration (set OAUTH_ENABLED=true to enable)
+# SECURITY WARNING: Change OAUTH_SECRET_KEY from default value before enabling!
 Environment="OAUTH_ENABLED=false"
 Environment="OAUTH_CLIENT_ID="
 Environment="OAUTH_CLIENT_SECRET="
@@ -20,7 +21,7 @@ Environment="OAUTH_AUTHORIZE_URL="
 Environment="OAUTH_TOKEN_URL="
 Environment="OAUTH_USERINFO_URL="
 Environment="OAUTH_REDIRECT_URI=http://localhost:8080/auth/callback"
-Environment="OAUTH_SECRET_KEY=change-me-in-production"
+Environment="OAUTH_SECRET_KEY=CHANGE-THIS-TO-A-RANDOM-SECRET-KEY-BEFORE-ENABLING-OAUTH"
 # Default to localhost-only for security. Change --host to 0.0.0.0 for network access.
 ExecStart=/usr/bin/python3 /home/%i/Pc-MCP/src/server.py --web --port 8080 --host 127.0.0.1
 Restart=on-failure

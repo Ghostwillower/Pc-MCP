@@ -136,16 +136,24 @@ async def auth_callback(request: Request):
         # Get user info if userinfo endpoint is configured
         user = None
         if settings.oauth_userinfo_url:
-            user = token.get('userinfo')
-            if not user:
-                # Fetch userinfo if not included in token
-                user = await oauth.pcmcp.userinfo(token=token)
+            try:
+                user = token.get('userinfo')
+                if not user:
+                    # Fetch userinfo if not included in token
+                    user = await oauth.pcmcp.userinfo(token=token)
+            except Exception as e:
+                logger.warning(f"Failed to fetch userinfo: {e}")
+                # Continue with basic authentication even if userinfo fails
+                user = {'authenticated': True, 'sub': token.get('sub', 'unknown')}
         
-        # Store user in session
-        request.session['user'] = dict(user) if user else {'authenticated': True}
-        request.session['token'] = token
+        # Store only minimal user info in session (not the full token)
+        request.session['user'] = {
+            'email': user.get('email', 'unknown') if user else 'unknown',
+            'name': user.get('name', 'unknown') if user else 'unknown',
+            'authenticated': True
+        }
         
-        logger.info(f"User authenticated: {user.get('email', 'unknown') if user else 'unknown'}")
+        logger.info(f"User authenticated: {request.session['user'].get('email', 'unknown')}")
         
         # Redirect to home page
         return RedirectResponse(url='/')

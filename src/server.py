@@ -328,9 +328,6 @@ async def api_cad_create(request):
     data = await request.json()
     result = _cad_service.create_model(description=data.get("description", ""))
     return JSONResponse(result)
-    data = await request.json()
-    result = _cad_service.create_model(description=data.get("description", ""))
-    return JSONResponse(result)
 
 
 async def api_cad_modify(request):
