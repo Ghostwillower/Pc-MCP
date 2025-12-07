@@ -1,6 +1,13 @@
 # Pc-MCP
 MCP servers for my PC
 
+## Documentation
+
+- **[Building MCP Servers for ChatGPT](CHATGPT_MCP_GUIDE.md)** - Comprehensive guide to building MCP servers compatible with ChatGPT and API integrations
+- **[OpenAI Integration](OPENAI_INTEGRATION.md)** - Quick guide for integrating this server with OpenAI's MCP connectors
+- **[Architecture](ARCHITECTURE.md)** - Server architecture and design principles
+- **[Web Interface Guide](WEB_INTERFACE_GUIDE.md)** - Web control panel and auto-start setup
+
 ## CadSlicerPrinter MCP Server
 
 A Python 3 MCP server that enables iterative 3D model design, preview, slicing, and printing through ChatGPT and other MCP-compatible clients, or via the included web control panel.
