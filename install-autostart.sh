@@ -98,8 +98,28 @@ echo "  Check status:    sudo systemctl status cadslicerprinter@$ACTUAL_USER.ser
 echo "  View logs:       sudo journalctl -u cadslicerprinter@$ACTUAL_USER.service -f"
 echo "  Disable autorun: sudo systemctl disable cadslicerprinter@$ACTUAL_USER.service"
 echo ""
+if [ "$CLOUDFLARED_INSTALLED" = true ]; then
+    echo "Cloudflared tunnel commands:"
+    echo "  Start tunnel:    sudo systemctl start cloudflared-pcmcp@$ACTUAL_USER.service"
+    echo "  Stop tunnel:     sudo systemctl stop cloudflared-pcmcp@$ACTUAL_USER.service"
+    echo "  Check status:    sudo systemctl status cloudflared-pcmcp@$ACTUAL_USER.service"
+    echo "  View logs:       sudo journalctl -u cloudflared-pcmcp@$ACTUAL_USER.service -f"
+    echo ""
+fi
 echo "To start the service now, run:"
 echo "  sudo systemctl start cadslicerprinter@$ACTUAL_USER.service"
+if [ "$CLOUDFLARED_INSTALLED" = true ]; then
+    echo "  sudo systemctl start cloudflared-pcmcp@$ACTUAL_USER.service"
+fi
 echo ""
 echo "Web interface will be available at: http://localhost:8080"
 echo ""
+echo "OAuth Configuration:"
+echo "  OAuth is disabled by default. To enable OAuth authentication:"
+echo "  1. Edit /etc/systemd/system/cadslicerprinter@.service"
+echo "  2. Set OAUTH_ENABLED=true"
+echo "  3. Configure OAuth provider details (client ID, secret, URLs)"
+echo "  4. Reload systemd: sudo systemctl daemon-reload"
+echo "  5. Restart service: sudo systemctl restart cadslicerprinter@$ACTUAL_USER.service"
+echo ""
+
