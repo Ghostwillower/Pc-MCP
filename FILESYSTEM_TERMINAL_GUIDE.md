@@ -1,6 +1,6 @@
 # Filesystem and Terminal Tools
 
-This document describes the filesystem and terminal tools available in the Pc-MCP server.
+This document describes the filesystem and terminal tools available in the CAD-Slicer-Printer MCP server.
 
 ## Overview
 

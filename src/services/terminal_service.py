@@ -1,9 +1,10 @@
 """Terminal service for safe command execution without admin privileges."""
 
 import os
+import re
 import shlex
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from utils.command import run_command_async
 from config import get_settings
@@ -58,7 +59,7 @@ class TerminalService:
         except Exception:
             return False
     
-    def _is_command_safe(self, command: str) -> tuple[bool, str]:
+    def _is_command_safe(self, command: str) -> Tuple[bool, str]:
         """
         Check if a command is safe to execute (doesn't require admin).
         
@@ -66,7 +67,7 @@ class TerminalService:
             command: Command string to check
             
         Returns:
-            tuple: (is_safe, reason_if_not_safe)
+            Tuple: (is_safe, reason_if_not_safe)
         """
         # Parse command to get the base command
         try:
@@ -80,10 +81,19 @@ class TerminalService:
             if base_command in self.BLOCKED_COMMANDS:
                 return False, f"Command '{base_command}' requires admin privileges and is blocked"
             
-            # Check for shell operators that could be used for privilege escalation
-            dangerous_operators = ['|sudo', '&&sudo', ';sudo', '|su', '&&su', ';su']
-            for op in dangerous_operators:
-                if op in command:
+            # Check for privilege escalation attempts using regex patterns
+            # This catches variations with/without spaces around operators
+            escalation_patterns = [
+                r'\|\s*sudo\b',      # | sudo or |sudo
+                r'&&\s*sudo\b',      # && sudo or &&sudo
+                r';\s*sudo\b',       # ; sudo or ;sudo
+                r'\|\s*su\b',        # | su or |su
+                r'&&\s*su\b',        # && su or &&su
+                r';\s*su\b',         # ; su or ;su
+            ]
+            
+            for pattern in escalation_patterns:
+                if re.search(pattern, command):
                     return False, "Command contains privilege escalation attempt"
             
             return True, ""

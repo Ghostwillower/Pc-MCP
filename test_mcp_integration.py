@@ -51,8 +51,8 @@ async def test_mcp_tools():
         # Test filesystem_create_directory
         print("\n4. Testing filesystem_create_directory...")
         test_dir = str(test_workspace / "myproject")
-        content, metadata = await mcp.call_tool("filesystem_create_directory", {"dir_path": test_dir})
-        result_data = metadata.get('result', {})
+        _, meta = await mcp.call_tool("filesystem_create_directory", {"dir_path": test_dir})
+        result_data = meta.get('result', {})
         if result_data.get("success"):
             print(f"   ✓ Directory created: {result_data.get('path')}")
         else:
@@ -61,11 +61,11 @@ async def test_mcp_tools():
         # Test filesystem_write_file
         print("\n5. Testing filesystem_write_file...")
         test_file = str(test_workspace / "myproject" / "test.txt")
-        content, metadata = await mcp.call_tool("filesystem_write_file", {
+        _, meta = await mcp.call_tool("filesystem_write_file", {
             "file_path": test_file,
             "content": "Hello from MCP integration test!"
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if result_data.get("success"):
             print(f"   ✓ File written: {result_data.get('size')} bytes")
         else:
@@ -73,8 +73,8 @@ async def test_mcp_tools():
         
         # Test filesystem_read_file
         print("\n6. Testing filesystem_read_file...")
-        content, metadata = await mcp.call_tool("filesystem_read_file", {"file_path": test_file})
-        result_data = metadata.get('result', {})
+        _, meta = await mcp.call_tool("filesystem_read_file", {"file_path": test_file})
+        result_data = meta.get('result', {})
         if "content" in result_data:
             print(f"   ✓ File read: {result_data.get('content')[:50]}...")
         else:
@@ -82,10 +82,10 @@ async def test_mcp_tools():
         
         # Test filesystem_list_directory
         print("\n7. Testing filesystem_list_directory...")
-        content, metadata = await mcp.call_tool("filesystem_list_directory", {
+        _, meta = await mcp.call_tool("filesystem_list_directory", {
             "dir_path": str(test_workspace / "myproject")
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if "entries" in result_data:
             print(f"   ✓ Listed {result_data.get('count')} entries")
             for entry in result_data.get("entries", []):
@@ -95,8 +95,8 @@ async def test_mcp_tools():
         
         # Test filesystem_get_info
         print("\n8. Testing filesystem_get_info...")
-        content, metadata = await mcp.call_tool("filesystem_get_info", {"path": test_file})
-        result_data = metadata.get('result', {})
+        _, meta = await mcp.call_tool("filesystem_get_info", {"path": test_file})
+        result_data = meta.get('result', {})
         if result_data.get("exists"):
             print(f"   ✓ Path exists: {result_data.get('type')}, {result_data.get('size')} bytes")
         else:
@@ -104,8 +104,8 @@ async def test_mcp_tools():
         
         # Test terminal_get_cwd
         print("\n9. Testing terminal_get_cwd...")
-        content, metadata = await mcp.call_tool("terminal_get_cwd", {})
-        result_data = metadata.get('result', {})
+        _, meta = await mcp.call_tool("terminal_get_cwd", {})
+        result_data = meta.get('result', {})
         if "current_directory" in result_data:
             print(f"   ✓ Current directory: {result_data.get('current_directory')}")
         else:
@@ -113,11 +113,11 @@ async def test_mcp_tools():
         
         # Test terminal_execute with a safe command
         print("\n10. Testing terminal_execute (echo)...")
-        content, metadata = await mcp.call_tool("terminal_execute", {
+        _, meta = await mcp.call_tool("terminal_execute", {
             "command": "echo 'Integration test successful'",
             "working_dir": str(test_workspace)
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if result_data.get("success"):
             print(f"   ✓ Command executed successfully")
             print(f"     Output: {result_data.get('stdout', '').strip()}")
@@ -127,11 +127,11 @@ async def test_mcp_tools():
         
         # Test terminal_execute with file creation
         print("\n11. Testing terminal_execute (touch)...")
-        content, metadata = await mcp.call_tool("terminal_execute", {
+        _, meta = await mcp.call_tool("terminal_execute", {
             "command": "touch newfile.txt",
             "working_dir": str(test_workspace)
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if result_data.get("success"):
             print(f"   ✓ Command executed successfully")
             # Verify the file was created
@@ -144,10 +144,10 @@ async def test_mcp_tools():
         
         # Test security: blocked command
         print("\n12. Testing security - blocked command (sudo)...")
-        content, metadata = await mcp.call_tool("terminal_execute", {
+        _, meta = await mcp.call_tool("terminal_execute", {
             "command": "sudo echo 'This should fail'"
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if "error" in result_data:
             print(f"   ✓ Command correctly blocked: {result_data.get('error')}")
         else:
@@ -155,11 +155,11 @@ async def test_mcp_tools():
         
         # Test filesystem_delete_path
         print("\n13. Testing filesystem_delete_path...")
-        content, metadata = await mcp.call_tool("filesystem_delete_path", {
+        _, meta = await mcp.call_tool("filesystem_delete_path", {
             "path": str(test_workspace / "myproject"),
             "recursive": True
         })
-        result_data = metadata.get('result', {})
+        result_data = meta.get('result', {})
         if result_data.get("success"):
             print(f"   ✓ Directory deleted successfully")
         else:
