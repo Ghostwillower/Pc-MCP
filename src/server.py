@@ -78,6 +78,13 @@ except ImportError as e:
     WEB_DEPENDENCIES_AVAILABLE = False
     _MISSING_WEB_DEP = str(e)
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # OAuth imports
 try:
     from oauth_auth import (
@@ -93,13 +100,6 @@ try:
 except ImportError as e:
     OAUTH_AVAILABLE = False
     logger.warning(f"OAuth dependencies not available: {e}")
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Global service instances for cleanup
 _printer_service = None
