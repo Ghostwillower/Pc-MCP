@@ -90,7 +90,6 @@ try:
     from oauth_auth import (
         init_oauth,
         is_authenticated,
-        require_auth,
         login,
         auth_callback,
         logout,

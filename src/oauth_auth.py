@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional, Dict, Any
+from functools import wraps
 from authlib.integrations.starlette_client import OAuth
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, JSONResponse
@@ -90,6 +91,7 @@ def require_auth(func):
         async def my_route(request):
             ...
     """
+    @wraps(func)
     async def wrapper(request: Request):
         if not is_authenticated(request):
             return JSONResponse(

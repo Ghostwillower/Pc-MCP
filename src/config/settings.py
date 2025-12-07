@@ -88,7 +88,12 @@ class Settings:
                 messages.append("OAUTH_AUTHORIZE_URL is required when OAuth is enabled")
             if not self.oauth_token_url:
                 messages.append("OAUTH_TOKEN_URL is required when OAuth is enabled")
-            if self.oauth_secret_key == "change-me-in-production":
+            # Check for common insecure default secret keys
+            insecure_defaults = [
+                "change-me-in-production",
+                "CHANGE-THIS-TO-A-RANDOM-SECRET-KEY-BEFORE-ENABLING-OAUTH"
+            ]
+            if self.oauth_secret_key in insecure_defaults:
                 messages.append("WARNING: OAUTH_SECRET_KEY must be changed from default for security!")
         
         return messages
