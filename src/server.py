@@ -71,6 +71,7 @@ try:
     from starlette.routing import Route, Mount
     from starlette.responses import JSONResponse, FileResponse
     from starlette.staticfiles import StaticFiles
+    from starlette.middleware.sessions import SessionMiddleware
     import uvicorn
     WEB_DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
@@ -83,6 +84,21 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# OAuth imports
+try:
+    from oauth_auth import (
+        init_oauth,
+        is_authenticated,
+        login,
+        auth_callback,
+        logout,
+        user_info,
+    )
+    OAUTH_AVAILABLE = True
+except ImportError as e:
+    OAUTH_AVAILABLE = False
+    logger.warning(f"OAuth dependencies not available: {e}")
 
 # Global service instances for cleanup
 _printer_service = None
@@ -283,14 +299,36 @@ _printer_service = PrinterService()
 _workspace_service = WorkspaceService()
 
 
+# Helper function to check authentication
+def check_auth(request):
+    """Check if request is authenticated when OAuth is enabled."""
+    settings = get_settings()
+    if settings.oauth_enabled and OAUTH_AVAILABLE:
+        if not is_authenticated(request):
+            return JSONResponse(
+                {"error": "Authentication required", "authenticated": False},
+                status_code=401
+            )
+    return None
+
+
 # Web API endpoints that wrap service methods
 async def api_health(request):
-    """Health check endpoint"""
+    """
+    Health check endpoint - always public for monitoring and load balancers.
+    
+    This endpoint intentionally does not require authentication to allow
+    external monitoring tools and load balancers to check service status.
+    """
     return JSONResponse({"status": "ok", "server": "CadSlicerPrinter"})
 
 
 async def api_cad_create(request):
     """Create a new CAD model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = _cad_service.create_model(description=data.get("description", ""))
     return JSONResponse(result)
@@ -298,6 +336,10 @@ async def api_cad_create(request):
 
 async def api_cad_modify(request):
     """Modify an existing CAD model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = _cad_service.add_modification_note(
         model_id=data.get("model_id", ""),
@@ -308,6 +350,10 @@ async def api_cad_modify(request):
 
 async def api_cad_get_code(request):
     """Get the OpenSCAD code for a model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = _cad_service.get_code(model_id=data.get("model_id", ""))
     return JSONResponse(result)
@@ -315,6 +361,10 @@ async def api_cad_get_code(request):
 
 async def api_cad_update_parameters(request):
     """Update parameters in a CAD model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = _cad_service.update_parameters(
         model_id=data.get("model_id", ""),
@@ -325,6 +375,10 @@ async def api_cad_update_parameters(request):
 
 async def api_cad_preview(request):
     """Render a preview of a CAD model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = await _cad_service.render_preview(
         model_id=data.get("model_id", ""),
@@ -337,6 +391,10 @@ async def api_cad_preview(request):
 
 async def api_cad_list_previews(request):
     """List previews for a model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = _cad_service.list_previews(model_id=data.get("model_id", ""))
     return JSONResponse(result)
@@ -344,6 +402,10 @@ async def api_cad_list_previews(request):
 
 async def api_slicer_slice(request):
     """Slice a model"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = await _slicer_service.slice_model(
         model_id=data.get("model_id", ""),
@@ -353,14 +415,22 @@ async def api_slicer_slice(request):
     return JSONResponse(result)
 
 
-async def api_printer_status(_request):
+async def api_printer_status(request):
     """Get printer status"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     result = await _printer_service.get_status()
     return JSONResponse(result)
 
 
 async def api_printer_upload_and_start(request):
     """Upload and start print"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = await _printer_service.upload_and_start(model_id=data.get("model_id", ""))
     return JSONResponse(result)
@@ -368,13 +438,21 @@ async def api_printer_upload_and_start(request):
 
 async def api_printer_send_gcode(request):
     """Send G-code command"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     data = await request.json()
     result = await _printer_service.send_gcode(gcode=data.get("gcode", ""))
     return JSONResponse(result)
 
 
-async def api_workspace_models(_request):
+async def api_workspace_models(request):
     """List all workspace models"""
+    auth_error = check_auth(request)
+    if auth_error:
+        return auth_error
+    
     result = _workspace_service.list_models()
     return JSONResponse(result)
 
@@ -388,6 +466,7 @@ async def index(request):
 # Create web application with both MCP and web API
 def create_web_app():
     """Create a Starlette application with both MCP and web API endpoints"""
+    settings = get_settings()
     static_dir = Path(__file__).parent / "static"
     
     routes = [
@@ -407,7 +486,29 @@ def create_web_app():
         Mount("/static", StaticFiles(directory=str(static_dir)), name="static"),
     ]
     
-    return Starlette(routes=routes)
+    # Add OAuth routes if enabled
+    if settings.oauth_enabled and OAUTH_AVAILABLE:
+        routes.extend([
+            Route("/auth/login", login, methods=["GET"]),
+            Route("/auth/callback", auth_callback, methods=["GET"]),
+            Route("/auth/logout", logout, methods=["GET"]),
+            Route("/auth/user", user_info, methods=["GET"]),
+        ])
+    
+    app = Starlette(routes=routes)
+    
+    # Add session middleware for OAuth
+    if settings.oauth_enabled and OAUTH_AVAILABLE:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=settings.oauth_secret_key,
+            max_age=86400,  # 24 hours
+        )
+        # Initialize OAuth
+        init_oauth()
+        logger.info("OAuth authentication enabled")
+    
+    return app
 
 
 def run_web_server(host="127.0.0.1", port=8080):

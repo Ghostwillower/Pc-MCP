@@ -40,6 +40,16 @@ class Settings:
         self.web_host: str = os.getenv("WEB_HOST", "127.0.0.1")
         self.web_port: int = int(os.getenv("WEB_PORT", "8080"))
         
+        # OAuth configuration
+        self.oauth_enabled: bool = os.getenv("OAUTH_ENABLED", "false").lower() in ("true", "1", "yes")
+        self.oauth_client_id: str = os.getenv("OAUTH_CLIENT_ID", "")
+        self.oauth_client_secret: str = os.getenv("OAUTH_CLIENT_SECRET", "")
+        self.oauth_authorize_url: str = os.getenv("OAUTH_AUTHORIZE_URL", "")
+        self.oauth_token_url: str = os.getenv("OAUTH_TOKEN_URL", "")
+        self.oauth_userinfo_url: str = os.getenv("OAUTH_USERINFO_URL", "")
+        self.oauth_redirect_uri: str = os.getenv("OAUTH_REDIRECT_URI", "http://localhost:8080/auth/callback")
+        self.oauth_secret_key: str = os.getenv("OAUTH_SECRET_KEY", "change-me-in-production")
+        
         # Logging configuration
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
         
@@ -67,6 +77,24 @@ class Settings:
         
         if not self.octoprint_api_key:
             messages.append("OCTOPRINT_API_KEY not configured - printer features will not work")
+        
+        # Validate OAuth configuration if enabled
+        if self.oauth_enabled:
+            if not self.oauth_client_id:
+                messages.append("OAUTH_CLIENT_ID is required when OAuth is enabled")
+            if not self.oauth_client_secret:
+                messages.append("OAUTH_CLIENT_SECRET is required when OAuth is enabled")
+            if not self.oauth_authorize_url:
+                messages.append("OAUTH_AUTHORIZE_URL is required when OAuth is enabled")
+            if not self.oauth_token_url:
+                messages.append("OAUTH_TOKEN_URL is required when OAuth is enabled")
+            # Check for common insecure default secret keys
+            insecure_defaults = [
+                "change-me-in-production",
+                "CHANGE-THIS-TO-A-RANDOM-SECRET-KEY-BEFORE-ENABLING-OAUTH"
+            ]
+            if self.oauth_secret_key in insecure_defaults:
+                messages.append("WARNING: OAUTH_SECRET_KEY must be changed from default for security!")
         
         return messages
     

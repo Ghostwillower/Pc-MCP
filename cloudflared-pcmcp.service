@@ -1,0 +1,23 @@
+[Unit]
+Description=Cloudflared Tunnel for PcMCP with OAuth
+After=network.target
+Before=cadslicerprinter@.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/Pc-MCP
+# Cloudflare Access OAuth environment variables (for tunnel-level authentication)
+# These are separate from the application OAuth and configure Cloudflare Access policies
+# See: https://developers.cloudflare.com/cloudflare-one/identity/
+Environment="TUNNEL_OAUTH_CLIENT_ID="
+Environment="TUNNEL_OAUTH_CLIENT_SECRET="
+# Run cloudflared tunnel with OAuth support
+ExecStart=/usr/bin/cloudflared tunnel run pcmcp
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

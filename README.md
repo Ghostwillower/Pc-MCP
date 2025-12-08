@@ -8,6 +8,7 @@ MCP servers for my PC
 - **[Architecture](ARCHITECTURE.md)** - Server architecture and design principles
 - **[Web Interface Guide](WEB_INTERFACE_GUIDE.md)** - Web control panel and auto-start setup
 - **[Filesystem and Terminal Tools](FILESYSTEM_TERMINAL_GUIDE.md)** - Guide to filesystem operations and terminal command execution
+- **[OAuth Configuration](OAUTH_GUIDE.md)** - Guide to configuring OAuth authentication for secure access
 
 ## CadSlicerPrinter MCP Server
 
@@ -44,6 +45,8 @@ A Python 3 MCP server that enables iterative 3D model design, preview, slicing, 
   - Build and test code
   - Security controls block privileged operations (sudo, systemctl, etc.)
 - **Web Control Panel**: Minimalist web interface for controlling all functions
+- **OAuth Authentication**: Optional OAuth 2.0 authentication for secure access control
+- **Cloudflared Tunnel Support**: Optional Cloudflare Tunnel integration for secure remote access
 - **Auto-Start Support**: Run as a system service on boot without GUI
 - **OpenAI Compatible**: Uses stdio transport for seamless integration with OpenAI's MCP connectors
 
