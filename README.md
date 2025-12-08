@@ -1,6 +1,11 @@
 # Pc-MCP
 MCP servers for my PC
 
+## 🚀 Quick Start
+
+**New to Pc-MCP?** Start here:
+- **[Getting Started Guide](GETTING_STARTED.md)** - Complete step-by-step setup from installation to first use
+
 ## Documentation
 
 - **[Building MCP Servers for ChatGPT](CHATGPT_MCP_GUIDE.md)** - Comprehensive guide to building MCP servers compatible with ChatGPT and API integrations
@@ -9,6 +14,7 @@ MCP servers for my PC
 - **[Web Interface Guide](WEB_INTERFACE_GUIDE.md)** - Web control panel and auto-start setup
 - **[Filesystem and Terminal Tools](FILESYSTEM_TERMINAL_GUIDE.md)** - Guide to filesystem operations and terminal command execution
 - **[OAuth Configuration](OAUTH_GUIDE.md)** - Guide to configuring OAuth authentication for secure access
+- **[Iterative Workflow](ITERATIVE_WORKFLOW_GUIDE.md)** - AI-driven iterative design with visual feedback
 
 ## CadSlicerPrinter MCP Server
 
@@ -69,7 +75,9 @@ AI: Updates angle from 45° to 60° → Preview matches target design
 
 ### Quick Start
 
-See [README_CADSLICERPRINTER.md](README_CADSLICERPRINTER.md) for detailed documentation.
+See [Getting Started Guide](GETTING_STARTED.md) for detailed installation and setup instructions.
+
+**TL;DR:**
 
 ```bash
 # Install dependencies
